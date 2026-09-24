@@ -1,0 +1,23 @@
+<?php
+
+namespace App\Http\Controllers\Shop;
+
+use App\Http\Controllers\Controller;
+use App\Models\Product;
+use Illuminate\View\View;
+
+class HomeController extends Controller
+{
+    public function index(): View
+    {
+        $products = Product::query()
+            ->active()
+            ->with(['mainImage', 'category'])
+            ->inStock()
+            ->latest()
+            ->limit(8)
+            ->get();
+
+        return view('shop.home', compact('products'));
+    }
+}

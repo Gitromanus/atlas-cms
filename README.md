@@ -1,66 +1,110 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+<div align="center">
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+# 🛍️ AtlasCMS
 
-## About Laravel
+**SaaS CMS для интернет-магазинов с обменом товарами с 1С**
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+Laravel 12 · MySQL · CommerceML · Filament 3 · Blade + Alpine.js + Tailwind
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+</div>
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+---
 
-## Learning Laravel
+## О проекте
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+AtlasCMS — облачная (SaaS) платформа для создания интернет-магазинов.
+Одна установка обслуживает **множество магазинов** (мультиарендность):
+каждый магазин живёт на своём поддомене или собственном домене и полностью
+изолирован от других.
 
-You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+Главная особенность — **классический обмен с 1С:Предприятие по протоколу CommerceML**
+(поддерживается в 1С:УТ, Рознице, ERP «из коробки»): товары, характеристики,
+цены, остатки идут из 1С на сайт, а заказы — с сайта обратно в 1С.
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+## Возможности
 
-## Laravel Sponsors
+| Модуль | Описание |
+|---|---|
+| 🏪 **Мультиарендность** | Много магазинов на одной установке, поддомены и свои домены, полная изоляция данных |
+| 📦 **Каталог** | Категории (дерево), товары, артикулы, штрихкоды, характеристики, изображения |
+| 💰 **Цены и остатки** | Типы цен, склады, синхронизация из 1С |
+| 🛒 **Корзина и заказы** | Гостевая корзина, оформление, статусы, история заказов |
+| 👤 **Личный кабинет** | Регистрация и вход покупателя, список и детали заказов |
+| 🔄 **Обмен с 1С** | CommerceML 2.09: импорт каталога и предложений, экспорт заказов, приём статусов |
+| 🎨 **Система тем** | Сменные шаблоны витрины, настройка дизайна через CSS-переменные без правки кода |
+| ⚙️ **Админ-панель** | Filament 3: товары, категории, заказы, покупатели, магазины, настройки, логи обмена |
+| 🧹 **Фоновая обработка** | Импорт больших XML в очереди, cron для shared-хостинга |
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+## Технологический стек
 
-### Premium Partners
+- **Backend:** PHP 8.2+ / Laravel 12 (LTS)
+- **Database:** MySQL 8 (в разработке — SQLite)
+- **Admin panel:** Filament 3
+- **Frontend:** Blade + Alpine.js + Tailwind CSS (без сборки, работает на shared-хостинге)
 
-- **[Vehikl](https://vehikl.com/)**
-- **[Tighten Co.](https://tighten.co)**
-- **[WebReinvent](https://webreinvent.com/)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel/)**
-- **[Cyber-Duck](https://cyber-duck.co.uk)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Jump24](https://jump24.co.uk)**
-- **[Redberry](https://redberry.international/laravel/)**
-- **[Active Logic](https://activelogic.com)**
-- **[byte5](https://byte5.de)**
-- **[OP.GG](https://op.gg)**
+## Быстрый старт
 
-## Contributing
+```bash
+composer install
+cp .env.example .env
+php artisan key:generate
+# настройте БД в .env (по умолчанию используется SQLite)
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+php artisan migrate --seed   # создаёт тему default, супер-админа и демо-магазин
+php artisan serve            # http://localhost:8000
+```
 
-## Code of Conduct
+Демо-магазин доступен на поддомене `demo.localhost` (или `demo.atlascms.ru` в проде).
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+**Доступы по умолчанию (после сидера):**
 
-## Security Vulnerabilities
+| Роль | Email | Пароль |
+|---|---|---|
+| Супер-админ | `admin@atlascms.ru` | `admin12345` |
+| Владелец магазина | `owner@demo.ru` | `admin12345` |
+| Обмен 1С | `1c` | `1csecret` |
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+> ⚠️ Обязательно смените пароли в боевой среде!
 
-## License
+## Обмен с 1С (CommerceML)
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+Точка входа обмена: `https://{домен}/1c/exchange`
+
+1. В админке (Настройки магазина) укажите **логин и пароль обмена**.
+2. В 1С настройте обмен с сайтом (см. [docs/ONEC-SETUP.md](docs/ONEC-SETUP.md)).
+3. 1С выгружает `import.xml` (каталог) и `offers.xml` (цены и остатки).
+4. Заказы автоматически выгружаются в 1С, статусы — обратно на сайт.
+
+Подробно о протоколе — в [docs/ONEC-SETUP.md](docs/ONEC-SETUP.md).
+
+## Деплой на SpaceWeb
+
+Пошаговая инструкция: [docs/SPACEWEB-DEPLOY.md](docs/SPACEWEB-DEPLOY.md).
+
+## Структура проекта
+
+```
+app/
+├── Http/Controllers/
+│   ├── Shop/           # витрина: каталог, товар, корзина, оформление
+│   ├── Account/        # личный кабинет покупателя
+│   └── OneC/           # контроллер обмена CommerceML
+├── Services/
+│   ├── Tenant/         # мультиарендность
+│   ├── CommerceML/     # парсеры import.xml / offers.xml, экспорт заказов
+│   ├── Cart/           # корзина
+│   └── Orders/         # создание заказов
+├── Models/             # Tenant, Product, Category, Order и др.
+├── View/               # ThemeViewFinder (система тем)
+└── Filament/Admin/     # ресурсы админ-панели
+resources/views/themes/ # темы витрины (default, ...)
+routes/web.php          # маршруты витрины и обмена
+```
+
+## Лицензия
+
+Проект распространяется под лицензией [MIT](LICENSE).
+
+---
+
+<div align="center">Сделано с ❤️ для интернет-торговли · AtlasCMS</div>
