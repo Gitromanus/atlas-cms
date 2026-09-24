@@ -38,13 +38,36 @@ class ExchangeController extends Controller
         $mode = (string) $request->query('mode');
 
         try {
+            if ($mode === 'checkauth') {
+                return $this->checkauth($request, $tenant);
+            }
+
+            $store = new ExchangeStore($tenant);
+
+            // Доступ разрешён при валидных учётных данных ИЛИ валидной сессии.
+            // 1С может присылать закешированный session_id или не слать Basic-заголовок
+            // на каждый запрос — оба случая обрабатываем.
+            $authorized = $this->authorize($request, $tenant);
+            $sessionValid = $store->hasValidSession((string) $request->query('session_id'), $type);
+
+            if (! $authorized && ! $sessionValid) {
+                \Illuminate\Support\Facades\Log::info('1C: отклонён запрос без валидных учётных данных и сессии', [
+                    'mode' => $mode,
+                    'session_id' => $request->query('session_id'),
+                    'type' => $type,
+                    'url' => $request->fullUrl(),
+                ]);
+                $this->log($tenant, $type, $mode, $request->query('filename'), 'failure', 'Нет валидных учётных данных или сессии');
+
+                return response('failure');
+            }
+
             return match ($mode) {
-                'checkauth' => $this->checkauth($request, $tenant),
-                'init' => $this->guardSession($request, $tenant, fn (ExchangeStore $store) => $this->init($store)),
-                'file' => $this->guardSession($request, $tenant, fn (ExchangeStore $store) => $this->file($request, $store, $type)),
-                'import' => $this->guardSession($request, $tenant, fn (ExchangeStore $store) => $this->import($request, $store, $type)),
-                'query' => $this->guardSession($request, $tenant, fn (ExchangeStore $store) => $this->queryOrders($store)),
-                'success' => $this->guardSession($request, $tenant, fn (ExchangeStore $store) => $this->saleSuccess($store)),
+                'init' => $this->init($store),
+                'file' => $this->file($request, $store, $type),
+                'import' => $this->import($request, $store, $type),
+                'query' => $this->queryOrders($store),
+                'success' => $this->saleSuccess($store),
                 'failure' => $this->saleFailure($tenant, $type),
                 default => response('failure'),
             };
@@ -57,29 +80,40 @@ class ExchangeController extends Controller
     }
 
     /**
-     * mode=checkauth — проверка авторизации и старт сессии обмена.
+     * Проверка учётных данных владельца магазина (Basic Auth).
      */
-    protected function checkauth(Request $request, Tenant $tenant): Response
+    protected function authorize(Request $request, Tenant $tenant): bool
     {
         $login = $request->getUser();
         $password = $request->getPassword();
 
-        // Учётные данные обмена = учётная запись владельца магазина (панель /shop).
         $owner = $tenant->owner;
 
-        $valid = $owner !== null
+        return $owner !== null
             && $login !== null
             && hash_equals(strtolower((string) $owner->email), strtolower($login))
             && Hash::check((string) $password, (string) $owner->password);
+    }
 
-        if (! $valid) {
+    /**
+     * mode=checkauth — проверка авторизации и старт сессии обмена.
+     */
+    protected function checkauth(Request $request, Tenant $tenant): Response
+    {
+        if (! $this->authorize($request, $tenant)) {
             $this->log($tenant, (string) $request->query('type', 'catalog'), 'checkauth', null, 'failure', 'Неверные учётные данные обмена');
 
             return response('failure');
         }
 
-        $sessionId = (new ExchangeStore($tenant))->startSession();
-        $this->log($tenant, (string) $request->query('type', 'catalog'), 'checkauth', null, 'success', 'Авторизация успешна');
+        $type = (string) $request->query('type', 'catalog');
+        $store = new ExchangeStore($tenant);
+        $sessionId = $store->startSession($type);
+
+        // Новый прогон обмена: файлы будут приниматься «с чистого листа»
+        $store->set('received_files', []);
+
+        $this->log($tenant, $type, 'checkauth', null, 'success', 'Авторизация успешна');
 
         return response("success\n{$sessionId}");
     }
@@ -111,6 +145,19 @@ class ExchangeController extends Controller
             return response('failure');
         }
 
+        // Первый фрагмент файла в этом прогоне: отбрасываем остаток от прошлого прогона,
+        // чтобы файл не превращался в склейку нескольких XML-документов.
+        $received = (array) $store->get('received_files', []);
+
+        if (! in_array($filename, $received, true)) {
+            if ($store->hasFile($filename)) {
+                $store->deleteFile($filename);
+            }
+
+            $received[] = $filename;
+            $store->set('received_files', $received);
+        }
+
         $store->appendToFile($filename, $contents);
         $this->log($store, $type, 'file', $filename, 'success', 'Файл получен');
 
@@ -135,6 +182,7 @@ class ExchangeController extends Controller
             // Статусы заказов от 1С
             $count = (new OrderStatusImporter($store))->import($filename);
             $this->log($store, $type, 'import', $filename, 'success', "Обновлено заказов: {$count}");
+            $store->deleteFile($filename);
 
             return response('success');
         }
@@ -189,20 +237,8 @@ class ExchangeController extends Controller
         return response('success');
     }
 
-    /**
-     * Проверка валидности сессии перед каждым режимом (кроме checkauth).
-     */
-    protected function guardSession(Request $request, Tenant $tenant, callable $callback): Response
-    {
-        $store = new ExchangeStore($tenant);
-        $sessionId = $request->query('session_id');
-
-        if (! $store->hasValidSession((string) $sessionId)) {
-            return response('failure');
-        }
-
-        return $callback($store);
-    }
+    // guardSession больше не требуется: доступ проверяется в handle()
+    // по учётным данным ИЛИ сессии.
 
     protected function log(ExchangeStore|Tenant $context, string $type, string $mode, ?string $filename, string $status, string $message): void
     {

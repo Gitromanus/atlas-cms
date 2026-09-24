@@ -47,6 +47,8 @@ class ImportCatalogJob implements ShouldQueue
                 'status' => 'success',
                 'message' => "Импортировано товаров: {$count}",
             ]);
+
+            $store->deleteFile($this->filename);
         } catch (\Throwable $e) {
             Log::error('ImportCatalogJob failed', ['tenant' => $tenant->id, 'error' => $e->getMessage()]);
 

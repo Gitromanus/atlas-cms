@@ -91,16 +91,19 @@ class ShopRegistrationController extends Controller
             ]);
         });
 
-        // Если пользователь уже авторизован (например, владелец платформы),
-        // не переключаем его сессию на нового владельца магазина.
+        // Если пользователь уже авторизован — не переключаем его сессию
+        // на нового владельца магазина и отправляем в подходящую панель.
         if (! Auth::check()) {
             Auth::login($user);
             $request->session()->regenerate();
 
-            return redirect()->to('/shop');
+            return redirect()->to('/shop')
+                ->with('status', 'Магазин «'.$validated['shop_name'].'» создан. Добро пожаловать в панель управления!');
         }
 
-        return redirect()->to('/platform')
-            ->with('status', 'Магазин «'.$validated['shop_name'].'» создан. Владелец получит доступ в панель /shop.');
+        $current = Auth::user();
+
+        return redirect()->to($current->isSuperAdmin() ? '/platform' : '/shop')
+            ->with('status', 'Магазин «'.$validated['shop_name'].'» создан.');
     }
 }

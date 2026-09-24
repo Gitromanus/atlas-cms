@@ -93,6 +93,55 @@ class OneCExchangeTest extends TestCase
         $this->assertSame('failure', $response->getContent());
     }
 
+    public function test_repeated_checkauth_keeps_session_and_file_upload_works(): void
+    {
+        // Первый checkauth — как делает 1С в начале обмена
+        $first = $this->get('http://test.atlascms.ru/1c/exchange?type=catalog&mode=checkauth', $this->basicHeaders());
+        $sessionId = explode("\n", $first->getContent())[1];
+
+        // Повторный checkauth (1С вызывает его несколько раз) — сессия не должна перезаписываться
+        $second = $this->get('http://test.atlascms.ru/1c/exchange?type=catalog&mode=checkauth', $this->basicHeaders());
+        $this->assertSame($sessionId, explode("\n", $second->getContent())[1]);
+
+        // У типа sale — собственная сессия
+        $sale = $this->get('http://test.atlascms.ru/1c/exchange?type=sale&mode=checkauth', $this->basicHeaders());
+        $this->assertNotSame($sessionId, explode("\n", $sale->getContent())[1]);
+
+        // init и отправка файла с исходной сессией должны пройти
+        $this->get("http://test.atlascms.ru/1c/exchange?type=catalog&mode=init&session_id={$sessionId}")
+            ->assertOk()
+            ->assertSee('zip=no');
+
+        $this->postRaw(
+            "http://test.atlascms.ru/1c/exchange?type=catalog&mode=file&filename=import.xml&session_id={$sessionId}",
+            '<?xml version="1.0" encoding="utf-8"?><КоммерческаяИнформация ВерсияСхемы="2.09"><Каталог><Товары></Товары></Каталог></КоммерческаяИнформация>'
+        )->assertOk()->assertSee('success');
+    }
+
+    public function test_file_from_previous_run_is_truncated_not_appended(): void
+    {
+        // Первый прогон: checkauth + файл import.xml
+        $first = $this->get('http://test.atlascms.ru/1c/exchange?type=catalog&mode=checkauth', $this->basicHeaders());
+        $sessionId = explode("\n", $first->getContent())[1];
+
+        $this->postRaw(
+            "http://test.atlascms.ru/1c/exchange?type=catalog&mode=file&filename=import.xml&session_id={$sessionId}",
+            '<doc1/>'
+        )->assertOk()->assertSee('success');
+
+        // Второй прогон: тот же файл должен приниматься заново, а не дописываться
+        $second = $this->get('http://test.atlascms.ru/1c/exchange?type=catalog&mode=checkauth', $this->basicHeaders());
+        $sessionId2 = explode("\n", $second->getContent())[1];
+
+        $this->postRaw(
+            "http://test.atlascms.ru/1c/exchange?type=catalog&mode=file&filename=import.xml&session_id={$sessionId2}",
+            '<doc2/>'
+        )->assertOk()->assertSee('success');
+
+        $content = file_get_contents(storage_path('app/1c/testshop/import.xml'));
+        $this->assertSame('<doc2/>', trim((string) $content));
+    }
+
     public function test_full_catalog_import(): void
     {
         // 1. Авторизация

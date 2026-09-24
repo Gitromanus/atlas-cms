@@ -59,6 +59,72 @@ class ProductResource extends Resource
                             ->label('Помечен на удаление в 1С'),
                     ])
                     ->columns(2),
+                Forms\Components\Section::make('Характеристики')
+                    ->description('Свойство-вариант (цвет, размер) с заполненными вариантами значений выбирается на витрине')
+                    ->schema([
+                        Forms\Components\Repeater::make('features')
+                            ->relationship('features')
+                            ->label('Характеристики товара')
+                            ->schema([
+                                Forms\Components\TextInput::make('name')
+                                    ->label('Название')
+                                    ->required(),
+                                Forms\Components\TextInput::make('value')
+                                    ->label('Значение'),
+                                Forms\Components\Toggle::make('is_variant')
+                                    ->label('Вариант')
+                                    ->helperText('Выбор на витрине'),
+                                Forms\Components\TagsInput::make('options')
+                                    ->label('Варианты значений')
+                                    ->placeholder('Добавить значение…'),
+                                Forms\Components\TextInput::make('sort_order')
+                                    ->label('Порядок')
+                                    ->numeric()
+                                    ->default(0),
+                            ])
+                            ->columns(3)
+                            ->defaultItems(0)
+                            ->reorderableWithButtons()
+                            ->collapsible(),
+                    ]),
+                Forms\Components\Section::make('Цены и остатки')
+                    ->description('Цены по типам цен и остатки по складам (приходят из 1С, можно править вручную)')
+                    ->schema([
+                        Forms\Components\Repeater::make('prices')
+                            ->relationship('prices')
+                            ->label('Цены')
+                            ->schema([
+                                Forms\Components\Select::make('price_type_id')
+                                    ->label('Тип цены')
+                                    ->relationship('priceType', 'name')
+                                    ->required(),
+                                Forms\Components\TextInput::make('price')
+                                    ->label('Цена')
+                                    ->numeric()
+                                    ->required(),
+                            ])
+                            ->columns(2)
+                            ->defaultItems(0)
+                            ->reorderableWithButtons()
+                            ->collapsible(),
+                        Forms\Components\Repeater::make('stocks')
+                            ->relationship('stocks')
+                            ->label('Остатки по складам')
+                            ->schema([
+                                Forms\Components\Select::make('warehouse_id')
+                                    ->label('Склад')
+                                    ->relationship('warehouse', 'name')
+                                    ->required(),
+                                Forms\Components\TextInput::make('quantity')
+                                    ->label('Количество')
+                                    ->numeric()
+                                    ->required(),
+                            ])
+                            ->columns(2)
+                            ->defaultItems(0)
+                            ->reorderableWithButtons()
+                            ->collapsible(),
+                    ]),
                 Forms\Components\Section::make('Изображения')
                     ->description('Загрузите файлы или укажите внешние ссылки (из 1С). Локальные файлы имеют приоритет.')
                     ->schema([

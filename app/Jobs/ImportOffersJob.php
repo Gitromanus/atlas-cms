@@ -47,6 +47,8 @@ class ImportOffersJob implements ShouldQueue
                 'status' => 'success',
                 'message' => "Импортировано предложений: {$count}",
             ]);
+
+            $store->deleteFile($this->filename);
         } catch (\Throwable $e) {
             Log::error('ImportOffersJob failed', ['tenant' => $tenant->id, 'error' => $e->getMessage()]);
 

@@ -30,19 +30,31 @@ class ExchangeStore
         return $this->baseDir().'/state.json';
     }
 
-    public function startSession(): string
+    /**
+     * Старт сессии обмена для конкретного типа (catalog|sale).
+     *
+     * Если для типа уже есть валидная сессия — возвращаем её, чтобы
+     * повторные checkauth (1С вызывает их по несколько раз) не ломали обмен.
+     */
+    public function startSession(string $type = 'catalog'): string
     {
+        $existing = $this->get('session_id_'.$type);
+
+        if ($existing !== null && $this->hasValidSession($existing, $type)) {
+            return (string) $existing;
+        }
+
         $id = Str::random(32);
 
-        $this->set('session_id', $id);
-        $this->set('started_at', now()->toIso8601String());
+        $this->set('session_id_'.$type, $id);
+        $this->set('started_at_'.$type, now()->toIso8601String());
 
         return $id;
     }
 
-    public function hasValidSession(?string $sessionId): bool
+    public function hasValidSession(?string $sessionId, string $type = 'catalog'): bool
     {
-        return $sessionId !== null && $sessionId === $this->get('session_id');
+        return $sessionId !== null && $sessionId === $this->get('session_id_'.$type);
     }
 
     public function get(string $key, mixed $default = null): mixed
