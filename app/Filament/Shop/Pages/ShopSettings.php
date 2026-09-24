@@ -4,6 +4,7 @@ namespace App\Filament\Shop\Pages;
 
 use App\Models\ExchangeLog;
 use App\Models\Tenant;
+use App\Models\Theme;
 use Filament\Actions\Action;
 use Filament\Forms\Components\ColorPicker;
 use Filament\Forms\Components\Section;
@@ -58,8 +59,7 @@ class ShopSettings extends Page implements HasForms
                         TextInput::make('subdomain')->label('Поддомен')
                             ->helperText(fn () => 'Витрина: https://{поддомен}.'.config('atlas.root_domain')),
                         Select::make('theme_id')->label('Тема витрины')
-                            ->relationship('theme', 'name')
-                            ->preload(),
+                            ->options(Theme::query()->pluck('name', 'id')),
                         Toggle::make('is_active')->label('Магазин активен'),
                     ])
                     ->columns(2),
