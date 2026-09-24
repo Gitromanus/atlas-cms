@@ -147,6 +147,30 @@ class ShopFlowTest extends TestCase
         $this->assertNotNull($order->ext_id);
     }
 
+    public function test_entrepreneur_can_create_shop_self_service(): void
+    {
+        // Предприниматель сам создаёт магазин через публичную форму
+        $this->post('http://localhost/create-shop', [
+            'shop_name' => 'Мой первый магазин',
+            'name' => 'Пётр Иванов',
+            'email' => 'petr@example.com',
+            'password' => 'secret123',
+            'password_confirmation' => 'secret123',
+        ])->assertRedirect('/shop');
+
+        $this->assertDatabaseHas('tenants', ['name' => 'Мой первый магазин']);
+        $this->assertDatabaseHas('users', ['email' => 'petr@example.com']);
+
+        $tenant = Tenant::query()->where('name', 'Мой первый магазин')->first();
+        $this->assertNotNull($tenant);
+        $this->assertNotNull($tenant->subdomain);
+
+        // Системные статусы заказов созданы автоматически
+        $this->assertSame(5, \App\Models\OrderStatus::query()
+            ->where('tenant_id', $tenant->id)
+            ->count());
+    }
+
     public function test_customer_registration_and_login(): void
     {
         $tenant = $this->makeTenant('demo', 'demo');

@@ -50,10 +50,16 @@ class User extends Authenticatable implements FilamentUser
     }
 
     /**
-     * Доступ в панель: супер-админ или владелец магазина.
+     * Доступ в панели AtlasCMS:
+     *  - platform — только супер-админ платформы (владелец SaaS);
+     *  - shop — только владелец магазина (предприниматель).
      */
     public function canAccessPanel(Panel $panel): bool
     {
-        return $this->isSuperAdmin() || $this->tenant_id !== null;
+        return match ($panel->getId()) {
+            'platform' => $this->isSuperAdmin(),
+            'shop' => $this->tenant_id !== null,
+            default => false,
+        };
     }
 }

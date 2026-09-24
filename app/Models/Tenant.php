@@ -46,6 +46,29 @@ class Tenant extends Model
         return $this->hasMany(Product::class);
     }
 
+    public function orders(): HasMany
+    {
+        return $this->hasMany(Order::class);
+    }
+
+    /**
+     * Владелец магазина (предприниматель) — пользователь панели /shop.
+     */
+    public function owner()
+    {
+        return $this->hasOne(User::class, 'tenant_id')
+            ->where('is_super_admin', false)
+            ->latest('id');
+    }
+
+    /**
+     * Общая выручка магазина (сумма заказов).
+     */
+    public function getRevenueAttribute(): float
+    {
+        return (float) $this->orders()->sum('total');
+    }
+
     /**
      * Значение настройки магазина из JSON-поля settings.
      */

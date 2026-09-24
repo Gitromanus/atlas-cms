@@ -3,6 +3,7 @@
 use App\Http\Controllers\Account\AuthController as CustomerAuthController;
 use App\Http\Controllers\Account\OrderController as AccountOrderController;
 use App\Http\Controllers\OneC\ExchangeController;
+use App\Http\Controllers\Platform\ShopRegistrationController;
 use App\Http\Controllers\Shop\CartController;
 use App\Http\Controllers\Shop\CatalogController;
 use App\Http\Controllers\Shop\CheckoutController;
@@ -19,6 +20,12 @@ Route::prefix('1c')->name('onec.')
     ->group(function () {
         Route::match(['get', 'post'], '/exchange', 'handle');
     });
+
+// ---------------------------------------------------------------------------
+// Самообслуживание платформы: регистрация магазина предпринимателем
+// ---------------------------------------------------------------------------
+Route::get('/create-shop', [ShopRegistrationController::class, 'create'])->name('platform.register');
+Route::post('/create-shop', [ShopRegistrationController::class, 'store']);
 
 // ---------------------------------------------------------------------------
 // Витрина магазина (требуется активный тенант)
