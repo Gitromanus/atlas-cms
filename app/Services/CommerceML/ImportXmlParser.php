@@ -8,6 +8,7 @@ use App\Models\ProductFeature;
 use App\Models\ProductImage;
 use App\Services\Tenant\TenantContext;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use SimpleXMLElement;
 
@@ -211,12 +212,48 @@ class ImportXmlParser
         $startOrder = ((int) $product->images()->max('sort_order')) + 1;
 
         foreach ($urls as $index => $url) {
+            $externalUrl = null;
+            $localPath = null;
+
+            // Относительные пути (import_files/...) — сами файлы 1С прислала по протоколу;
+            // копируем их в публичное хранилище, чтобы картинки открывались на сайте.
+            if (! Str::startsWith($url, ['http://', 'https://'])) {
+                $localPath = $this->storeImageFile($url);
+            } else {
+                $externalUrl = $url;
+            }
+
             ProductImage::query()->create([
                 'tenant_id' => $product->tenant_id,
                 'product_id' => $product->id,
-                'url' => $url,
+                'url' => $externalUrl,
+                'path' => $localPath,
                 'sort_order' => $startOrder + $index,
             ]);
         }
+    }
+
+    /**
+     * Копирование файла изображения из каталога обмена в публичное хранилище.
+     */
+    protected function storeImageFile(string $path): ?string
+    {
+        $source = $this->store->filePath($path);
+
+        if (! File::exists($source)) {
+            return null;
+        }
+
+        $slug = app(TenantContext::class)->current()?->slug ?? 'shop';
+        $dir = 'products/'.$slug.'/'.now()->format('Y/m');
+        $fileName = basename($path);
+
+        File::ensureDirectoryExists(storage_path('app/public/'.$dir));
+
+        if (! File::copy($source, storage_path('app/public/'.$dir.'/'.$fileName))) {
+            return null;
+        }
+
+        return $dir.'/'.$fileName;
     }
 }
