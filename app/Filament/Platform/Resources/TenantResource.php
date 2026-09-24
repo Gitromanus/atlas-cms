@@ -45,9 +45,6 @@ class TenantResource extends Resource
                         Forms\Components\TextInput::make('subdomain')
                             ->label('Поддомен')
                             ->helperText(fn () => 'Витрина: https://{поддомен}.'.config('atlas.root_domain')),
-                        Forms\Components\Select::make('theme_id')
-                            ->label('Тема витрины')
-                            ->relationship('theme', 'name'),
                         Forms\Components\Toggle::make('is_active')
                             ->label('Магазин активен')
                             ->default(true),
@@ -96,8 +93,6 @@ class TenantResource extends Resource
                 Tables\Columns\TextColumn::make('revenue')
                     ->label('Выручка')
                     ->money('RUB'),
-                Tables\Columns\TextColumn::make('theme.name')
-                    ->label('Тема'),
                 Tables\Columns\IconColumn::make('is_active')
                     ->label('Активен')
                     ->boolean(),

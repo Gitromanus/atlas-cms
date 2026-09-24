@@ -2,6 +2,7 @@
 
 namespace App\Filament\Shop\Pages;
 
+use App\Models\ExchangeLog;
 use App\Models\Tenant;
 use Filament\Actions\Action;
 use Filament\Forms\Components\ColorPicker;
@@ -80,6 +81,14 @@ class ShopSettings extends Page implements HasForms
                             ->helperText('Оставьте пустым, чтобы не менять пароль'),
                     ])
                     ->columns(2),
+                Section::make('Журнал обмена с 1С')
+                    ->description('Последние операции обмена: товары, цены, остатки и заказы')
+                    ->schema([
+                        \Filament\Forms\Components\View::make('filament.shop.pages.partials.exchange-log')
+                            ->viewData([
+                                'logs' => ExchangeLog::query()->latest()->limit(15)->get(),
+                            ]),
+                    ]),
             ])
             ->statePath('data');
     }
@@ -134,7 +143,7 @@ class ShopSettings extends Page implements HasForms
             ->send();
     }
 
-    protected function getFormActions(): array
+    public function getFormActions(): array
     {
         return [
             Action::make('save')

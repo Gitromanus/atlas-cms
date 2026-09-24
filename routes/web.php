@@ -3,6 +3,7 @@
 use App\Http\Controllers\Account\AuthController as CustomerAuthController;
 use App\Http\Controllers\Account\OrderController as AccountOrderController;
 use App\Http\Controllers\OneC\ExchangeController;
+use App\Http\Controllers\Platform\LandingController;
 use App\Http\Controllers\Platform\ShopRegistrationController;
 use App\Http\Controllers\Shop\CartController;
 use App\Http\Controllers\Shop\CatalogController;
@@ -22,10 +23,18 @@ Route::prefix('1c')->name('onec.')
     });
 
 // ---------------------------------------------------------------------------
+// Лендинг платформы: на поддомене магазина — витрина, на основном домене — лендинг
+// ---------------------------------------------------------------------------
+Route::get('/', [LandingController::class, 'index'])->name('home');
+
+// ---------------------------------------------------------------------------
 // Самообслуживание платформы: регистрация магазина предпринимателем
 // ---------------------------------------------------------------------------
 Route::get('/create-shop', [ShopRegistrationController::class, 'create'])->name('platform.register');
 Route::post('/create-shop', [ShopRegistrationController::class, 'store']);
+
+// Вход в панели платформы и магазина (обрабатываются Filament)
+Route::redirect('/login', '/shop/login');
 
 // ---------------------------------------------------------------------------
 // Витрина магазина (требуется активный тенант)
@@ -33,7 +42,6 @@ Route::post('/create-shop', [ShopRegistrationController::class, 'store']);
 Route::middleware('tenant')->group(function () {
     Route::get('/theme.css', ThemeCssController::class)->name('theme.css');
 
-    Route::get('/', [HomeController::class, 'index'])->name('home');
     Route::get('/catalog', [CatalogController::class, 'index'])->name('catalog.index');
     Route::get('/catalog/{category:slug}', [CatalogController::class, 'category'])->name('catalog.category');
     Route::get('/product/{product:slug}', [ProductController::class, 'show'])->name('product.show');
