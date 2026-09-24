@@ -92,6 +92,75 @@ class ExchangeStore
         return $this->baseDir().'/'.basename($filename);
     }
 
+    /**
+     * Путь к файлу с сохранением структуры (import_files/dd/img.png).
+     */
+    public function dirPath(string $filename): string
+    {
+        $relative = str_replace(['..', '\\'], '', ltrim($filename, '/\\'));
+
+        return $this->baseDir().'/'.$relative;
+    }
+
+    /**
+     * Каталог обмена текущего магазина.
+     */
+    public function directory(): string
+    {
+        return $this->baseDir();
+    }
+
+    /**
+     * Распаковка всех zip-архивов в каталоге обмена (картинки общим архивом).
+     */
+    public function extractZipFiles(): int
+    {
+        $total = 0;
+
+        foreach (File::glob($this->baseDir().'/*.zip') ?: [] as $archive) {
+            $total += $this->extractZip(basename($archive));
+            File::delete($archive);
+        }
+
+        return $total;
+    }
+
+    /**
+     * Распаковка ZIP-архива в каталог обмена (картинки приходят общим архивом).
+     */
+    public function extractZip(string $filename): int
+    {
+        $path = $this->filePath($filename);
+
+        if (! File::exists($path)) {
+            return 0;
+        }
+
+        $extracted = 0;
+
+        if (class_exists(\ZipArchive::class)) {
+            $zip = new \ZipArchive;
+
+            if ($zip->open($path) === true) {
+                $extracted = $zip->numFiles;
+                $zip->extractTo($this->baseDir());
+                $zip->close();
+
+                return $extracted;
+            }
+        }
+
+        try {
+            $phar = new \PharData($path);
+            $phar->extractTo($this->baseDir(), null, true);
+            $extracted = $phar->count();
+        } catch (\Throwable $e) {
+            throw new \RuntimeException("Не удалось распаковать архив {$filename}: {$e->getMessage()}");
+        }
+
+        return $extracted;
+    }
+
     public function hasFile(string $filename): bool
     {
         return File::exists($this->filePath($filename));

@@ -238,9 +238,14 @@ class ImportXmlParser
      */
     protected function storeImageFile(string $path): ?string
     {
+        // Файл может лежать «плоско» (поштучная выгрузка) или в структуре архива
         $source = $this->store->filePath($path);
 
         if (! File::exists($source)) {
+            $source = $this->store->dirPath($path);
+        }
+
+        if (! File::exists($source) || ! is_file($source)) {
             return null;
         }
 

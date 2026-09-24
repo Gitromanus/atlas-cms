@@ -187,6 +187,15 @@ class ExchangeController extends Controller
             return response('success');
         }
 
+        // Архив с картинками (1С может выгружать их общим zip вместо поштучно)
+        if (str_ends_with(strtolower($filename), '.zip')) {
+            $count = $store->extractZip($filename);
+            $this->log($store, $type, 'import', $filename, 'success', "Распаковано файлов: {$count}");
+            $store->deleteFile($filename);
+
+            return response('success');
+        }
+
         // Каталог: запускаем в фоне
         $isOffers = str_contains(strtolower($filename), 'offers');
 

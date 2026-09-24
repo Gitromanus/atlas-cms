@@ -37,6 +37,10 @@ class ImportCatalogJob implements ShouldQueue
 
         try {
             $store = new ExchangeStore($tenant);
+
+            // Картинки могут прийти общим zip-архивом — распаковываем до разбора каталога
+            $store->extractZipFiles();
+
             $count = (new ImportXmlParser($store))->import($this->filename);
 
             ExchangeLog::query()->create([
