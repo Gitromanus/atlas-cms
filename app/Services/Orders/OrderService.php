@@ -63,6 +63,7 @@ class OrderService
                     'product_id' => $item->product_id,
                     'product_name' => $item->product->name,
                     'sku' => $item->product->sku,
+                    'options' => $item->options ?? [],
                     'quantity' => $item->quantity,
                     'price' => $item->product->price ?? 0,
                     'total' => ($item->product->price ?? 0) * $item->quantity,

@@ -23,8 +23,8 @@
             <span class="text-lg font-bold">
                 {{ $product->price !== null ? number_format($product->price, 0, ',', ' ') . ' ₽' : 'Цена по запросу' }}
             </span>
-            <span class="text-xs {{ $product->stockTotal() > 0 ? 'text-green-600' : 'text-slate-400' }}">
-                {{ $product->stockTotal() > 0 ? 'В наличии' : 'Нет в наличии' }}
+            <span class="text-xs {{ $product->isAvailable() ? 'text-green-600' : 'text-slate-400' }}">
+                {{ $product->isAvailable() ? 'В наличии' : 'Нет в наличии' }}
             </span>
         </div>
     </div>

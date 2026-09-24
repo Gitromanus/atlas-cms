@@ -44,17 +44,36 @@ class ImportXmlParser
             $this->importGroups($classifier, null);
 
             // Карта свойств: Ид → Наименование (для значений характеристик товаров)
+            // и вариантные свойства: Ид → список допустимых значений (ВариантыЗначений)
             $properties = [];
+            $variantProperties = [];
             if (isset($classifier->Свойства)) {
                 foreach ($classifier->Свойства->Свойство as $property) {
                     $id = XmlUtils::child($property, 'Ид');
-                    if ($id !== null) {
-                        $properties[$id] = XmlUtils::child($property, 'Наименование') ?? $id;
+                    if ($id === null) {
+                        continue;
+                    }
+
+                    $properties[$id] = XmlUtils::child($property, 'Наименование') ?? $id;
+
+                    if (isset($property->ВариантыЗначений->ВариантЗначения)) {
+                        $options = [];
+                        foreach ($property->ВариантыЗначений->ВариантЗначения as $option) {
+                            $value = XmlUtils::child($option, 'Значение');
+                            if ($value !== null && $value !== '') {
+                                $options[] = $value;
+                            }
+                        }
+
+                        if ($options !== []) {
+                            $variantProperties[$id] = $options;
+                        }
                     }
                 }
             }
 
             $this->store->set('properties_map', $properties);
+            $this->store->set('variant_properties', $variantProperties);
         });
     }
 
@@ -88,10 +107,11 @@ class ImportXmlParser
     {
         $count = 0;
         $propertiesMap = $this->store->get('properties_map', []);
+        $variantProperties = $this->store->get('variant_properties', []);
 
-        DB::transaction(function () use ($path, &$count, $propertiesMap) {
-            XmlUtils::each($path, 'Товар', function (SimpleXMLElement $item) use (&$count, $propertiesMap) {
-                $this->importProduct($item, $propertiesMap);
+        DB::transaction(function () use ($path, &$count, $propertiesMap, $variantProperties) {
+            XmlUtils::each($path, 'Товар', function (SimpleXMLElement $item) use (&$count, $propertiesMap, $variantProperties) {
+                $this->importProduct($item, $propertiesMap, $variantProperties);
                 $count++;
             });
         });
@@ -99,7 +119,7 @@ class ImportXmlParser
         return $count;
     }
 
-    protected function importProduct(SimpleXMLElement $item, array $propertiesMap): void
+    protected function importProduct(SimpleXMLElement $item, array $propertiesMap, array $variantProperties): void
     {
         $extId = XmlUtils::child($item, 'Ид');
 
@@ -130,14 +150,14 @@ class ImportXmlParser
             'is_active' => $deleted ? false : true,
         ])->save();
 
-        // Характеристики
-        $this->syncFeatures($product, $item, $propertiesMap);
+        // Характеристики (вариантные свойства помечаются для выбора на витрине)
+        $this->syncFeatures($product, $item, $propertiesMap, $variantProperties);
 
         // Изображения (внешние ссылки из 1С)
         $this->syncImages($product, $item);
     }
 
-    protected function syncFeatures(Product $product, SimpleXMLElement $item, array $propertiesMap): void
+    protected function syncFeatures(Product $product, SimpleXMLElement $item, array $propertiesMap, array $variantProperties): void
     {
         $features = [];
 
@@ -150,9 +170,13 @@ class ImportXmlParser
                     continue;
                 }
 
+                $isVariant = array_key_exists($propId, $variantProperties);
+
                 $features[] = [
                     'name' => $propertiesMap[$propId] ?? $propId,
                     'value' => $valueText,
+                    'is_variant' => $isVariant,
+                    'options' => $isVariant ? $variantProperties[$propId] : null,
                 ];
             }
         }
@@ -165,6 +189,8 @@ class ImportXmlParser
                 'product_id' => $product->id,
                 'name' => $feature['name'],
                 'value' => $feature['value'],
+                'is_variant' => $feature['is_variant'],
+                'options' => $feature['options'],
             ]);
         }
     }
@@ -179,14 +205,17 @@ class ImportXmlParser
             }
         }
 
-        $product->images()->delete();
+        // Удаляем только внешние ссылки из 1С — локально загруженные файлы сохраняются
+        $product->images()->whereNull('path')->delete();
+
+        $startOrder = ((int) $product->images()->max('sort_order')) + 1;
 
         foreach ($urls as $index => $url) {
             ProductImage::query()->create([
                 'tenant_id' => $product->tenant_id,
                 'product_id' => $product->id,
                 'url' => $url,
-                'sort_order' => $index,
+                'sort_order' => $startOrder + $index,
             ]);
         }
     }

@@ -78,7 +78,16 @@
                 <ul class="mb-4 space-y-3">
                     @foreach ($items as $item)
                         <li class="flex justify-between gap-3 text-sm">
-                            <span>{{ $item->product->name }} × {{ $item->quantity }}</span>
+                            <span>
+                                {{ $item->product->name }} × {{ $item->quantity }}
+                                @if (! empty($item->options))
+                                    <span class="block text-xs text-slate-500">
+                                        @foreach ($item->options as $key => $value)
+                                            {{ $key }}: {{ $value }}@if (! $loop->last) · @endif
+                                        @endforeach
+                                    </span>
+                                @endif
+                            </span>
                             <span class="shrink-0 font-medium">{{ number_format(($item->product->price ?? 0) * $item->quantity, 0, ',', ' ') }} ₽</span>
                         </li>
                     @endforeach

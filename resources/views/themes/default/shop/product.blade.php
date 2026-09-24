@@ -39,23 +39,79 @@
                 {{ $product->price !== null ? number_format($product->price, 0, ',', ' ') . ' ₽' : 'Цена по запросу' }}
             </p>
 
-            <p class="mt-2 text-sm {{ $product->stockTotal() > 0 ? 'text-green-600' : 'text-red-500' }}">
-                {{ $product->stockTotal() > 0 ? 'В наличии' : 'Нет в наличии' }}
+            <p class="mt-2 text-sm {{ $product->isAvailable() ? 'text-green-600' : 'text-red-500' }}">
+                {{ $product->isAvailable() ? 'В наличии' : 'Нет в наличии' }}
             </p>
 
             @if ($product->description)
                 <div class="mt-6 whitespace-pre-line text-slate-700">{!! nl2br(e($product->description)) !!}</div>
             @endif
 
-            <form method="POST" action="{{ route('cart.add') }}" class="mt-8 flex max-w-xs gap-3">
+            @php $variants = $product->variantFeatures(); @endphp
+
+            <form method="POST" action="{{ route('cart.add') }}" class="mt-8">
                 @csrf
                 <input type="hidden" name="product_id" value="{{ $product->id }}">
-                <input type="number" name="quantity" value="1" min="1" max="999"
-                       class="w-20 rounded-theme border border-slate-300 px-3 py-2 text-center">
-                <button type="submit" class="flex-1 rounded-theme bg-primary px-5 py-2 font-semibold text-white hover:opacity-90">
-                    В корзину
-                </button>
+
+                @if ($variants->isNotEmpty())
+                    <div x-data="variantPicker(@js($variants->map(fn ($f) => [
+                        'name' => $f->name,
+                        'options' => $f->options ?: [$f->value],
+                        'default' => $f->value,
+                    ])->values()))" class="mb-6 space-y-4">
+                        <template x-for="(v, vi) in variants" :key="vi">
+                            <div>
+                                <span class="mb-1.5 block text-sm font-medium" x-text="v.name + ':'"></span>
+                                <div class="flex flex-wrap gap-2">
+                                    <template x-for="opt in v.options" :key="opt">
+                                        <button type="button"
+                                                @click="select(vi, opt)"
+                                                class="rounded-theme border px-4 py-1.5 text-sm transition"
+                                                :class="isSelected(vi, opt) ? 'border-primary bg-primary text-white' : 'border-slate-300 hover:bg-slate-50'"
+                                                x-text="opt"></button>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                        <input type="hidden" name="options" :value="JSON.stringify(payload())">
+                    </div>
+                @endif
+
+                <div class="flex max-w-md items-center gap-3" x-data="{ qty: 1 }">
+                    <div class="flex items-center overflow-hidden rounded-theme border border-slate-300 bg-white">
+                        <button type="button" @click="qty = Math.max(1, qty - 1)" class="px-3.5 py-2 text-lg leading-none text-slate-500 hover:bg-slate-100" aria-label="Уменьшить количество">−</button>
+                        <input type="number" name="quantity" x-model.number="qty" min="1" max="999" value="1"
+                               class="w-16 border-x border-slate-200 py-2 text-center focus:outline-none">
+                        <button type="button" @click="qty = Math.min(999, qty + 1)" class="px-3.5 py-2 text-lg leading-none text-slate-500 hover:bg-slate-100" aria-label="Увеличить количество">+</button>
+                    </div>
+                    <button type="submit" class="flex-1 rounded-theme bg-primary px-5 py-2 font-semibold text-white hover:opacity-90">
+                        В корзину
+                    </button>
+                </div>
             </form>
+
+            <script>
+                function variantPicker(variants) {
+                    return {
+                        variants,
+                        selected: {},
+                        init() {
+                            this.variants.forEach((v, i) => { this.selected[i] = v.default; });
+                        },
+                        select(index, value) {
+                            this.selected[index] = value;
+                        },
+                        isSelected(index, value) {
+                            return this.selected[index] === value;
+                        },
+                        payload() {
+                            const out = {};
+                            this.variants.forEach((v, i) => { out[v.name] = this.selected[i]; });
+                            return out;
+                        },
+                    };
+                }
+            </script>
 
             @if ($product->features->isNotEmpty())
                 <h2 class="mt-10 mb-3 text-xl font-bold">Характеристики</h2>

@@ -15,9 +15,19 @@ class ProductFeature extends Model
         'product_id',
         'name',
         'value',
+        'is_variant',
+        'options',
         'group_name',
         'sort_order',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'is_variant' => 'boolean',
+            'options' => 'array',
+        ];
+    }
 
     public function product(): BelongsTo
     {

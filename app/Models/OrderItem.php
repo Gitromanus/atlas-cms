@@ -12,6 +12,7 @@ class OrderItem extends Model
         'product_id',
         'product_name',
         'sku',
+        'options',
         'quantity',
         'price',
         'total',
@@ -21,6 +22,7 @@ class OrderItem extends Model
     protected function casts(): array
     {
         return [
+            'options' => 'array',
             'quantity' => 'integer',
             'price' => 'decimal:2',
             'total' => 'decimal:2',

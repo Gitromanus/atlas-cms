@@ -15,12 +15,14 @@ class CartItem extends Model
         'session_id',
         'customer_id',
         'product_id',
+        'options',
         'quantity',
     ];
 
     protected function casts(): array
     {
         return [
+            'options' => 'array',
             'quantity' => 'integer',
         ];
     }

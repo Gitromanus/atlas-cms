@@ -32,6 +32,9 @@ class ProductResource extends Resource
                             ->label('Название')
                             ->required()
                             ->maxLength(255),
+                        Forms\Components\TextInput::make('slug')
+                            ->label('ЧПУ (slug)')
+                            ->helperText('Оставьте пустым — сгенерируется из названия (кириллица → латиница)'),
                         Forms\Components\TextInput::make('sku')
                             ->label('Артикул'),
                         Forms\Components\TextInput::make('barcode')
@@ -56,7 +59,40 @@ class ProductResource extends Resource
                             ->label('Помечен на удаление в 1С'),
                     ])
                     ->columns(2),
+                Forms\Components\Section::make('Изображения')
+                    ->description('Загрузите файлы или укажите внешние ссылки (из 1С). Локальные файлы имеют приоритет.')
+                    ->schema([
+                        Forms\Components\Repeater::make('images')
+                            ->relationship('images')
+                            ->label('Изображения товара')
+                            ->schema([
+                                Forms\Components\FileUpload::make('path')
+                                    ->label('Файл (локальная загрузка)')
+                                    ->disk('public')
+                                    ->directory(fn () => 'products/'.self::tenantSlug())
+                                    ->image()
+                                    ->imageEditor()
+                                    ->columnSpanFull(),
+                                Forms\Components\TextInput::make('url')
+                                    ->label('Внешняя ссылка (из 1С)')
+                                    ->url()
+                                    ->placeholder('https://example.com/image.jpg'),
+                                Forms\Components\TextInput::make('sort_order')
+                                    ->label('Порядок')
+                                    ->numeric()
+                                    ->default(0),
+                            ])
+                            ->columns(2)
+                            ->defaultItems(0)
+                            ->reorderableWithButtons()
+                            ->collapsible(),
+                    ]),
             ]);
+    }
+
+    protected static function tenantSlug(): string
+    {
+        return app(\App\Services\Tenant\TenantContext::class)->current()?->slug ?? 'common';
     }
 
     public static function table(Table $table): Table
@@ -77,8 +113,10 @@ class ProductResource extends Resource
                     ->sortable(),
                 Tables\Columns\TextColumn::make('stockTotal')
                     ->label('Остаток')
+                    ->state(fn (Product $record): float => $record->stockTotal())
+                    ->formatStateUsing(fn (float $state): string => number_format($state, 0, ',', ' '))
                     ->badge()
-                    ->color(fn ($state) => $state > 0 ? 'success' : 'gray'),
+                    ->color(fn (float $state): string => $state > 0 ? 'success' : 'gray'),
                 Tables\Columns\IconColumn::make('is_active')
                     ->label('Активен')
                     ->boolean(),

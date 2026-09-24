@@ -9,6 +9,7 @@ use App\Models\ProductFeature;
 use App\Models\ProductStock;
 use App\Models\Tenant;
 use App\Models\Theme;
+use App\Models\User;
 use App\Models\Warehouse;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
@@ -21,9 +22,12 @@ class OneCExchangeTest extends TestCase
 
     protected Tenant $tenant;
 
-    protected string $login = '1c';
+    /**
+     * Учётная запись владельца магазина используется для Basic-авторизации обмена.
+     */
+    protected string $login = 'owner@test.ru';
 
-    protected string $password = 'secret';
+    protected string $password = 'secret123';
 
     protected function setUp(): void
     {
@@ -40,12 +44,14 @@ class OneCExchangeTest extends TestCase
             'slug' => 'testshop',
             'theme_id' => $theme->id,
             'is_active' => true,
-            'settings' => [
-                'exchange' => [
-                    'login' => $this->login,
-                    'password' => Hash::make($this->password),
-                ],
-            ],
+        ]);
+
+        // Владелец магазина — учётные данные обмена с 1С
+        User::query()->create([
+            'tenant_id' => $this->tenant->id,
+            'name' => 'Владелец',
+            'email' => $this->login,
+            'password' => Hash::make($this->password),
         ]);
 
         // Чистый каталог файлов обмена на каждый тест
@@ -244,5 +250,77 @@ XML;
         ]);
 
         $this->assertSame(7.0, (float) $product->stocks()->sum('quantity'));
+    }
+
+    public function test_catalog_import_marks_variant_properties(): void
+    {
+        $checkauth = $this->get('http://test.atlascms.ru/1c/exchange?type=catalog&mode=checkauth', $this->basicHeaders());
+        $sessionId = explode("\n", $checkauth->getContent())[1];
+
+        $importXml = <<<'XML'
+<?xml version="1.0" encoding="utf-8"?>
+<КоммерческаяИнформация ВерсияСхемы="2.09">
+  <Классификатор>
+    <Свойства>
+      <Свойство>
+        <Ид>prop-color</Ид>
+        <Наименование>Цвет</Наименование>
+        <ВариантыЗначений>
+          <ВариантЗначения><Ид>color-1</Ид><Значение>Красный</Значение></ВариантЗначения>
+          <ВариантЗначения><Ид>color-2</Ид><Значение>Синий</Значение></ВариантЗначения>
+        </ВариантыЗначений>
+      </Свойство>
+      <Свойство>
+        <Ид>prop-size</Ид>
+        <Наименование>Размер</Наименование>
+        <ВариантыЗначений>
+          <ВариантЗначения><Ид>size-1</Ид><Значение>M</Значение></ВариантЗначения>
+        </ВариантыЗначений>
+      </Свойство>
+    </Свойства>
+    <Группы>
+      <Группа><Ид>cat-1</Ид><Наименование>Одежда</Наименование></Группа>
+    </Группы>
+  </Классификатор>
+  <Каталог>
+    <Товары>
+      <Товар>
+        <Ид>prod-2</Ид>
+        <Артикул>TS-100</Артикул>
+        <Наименование>Футболка Atlas</Наименование>
+        <Группы><Ид>cat-1</Ид></Группы>
+        <ЗначенияСвойств>
+          <ЗначенияСвойства><Ид>prop-color</Ид><Значение>Красный</Значение></ЗначенияСвойства>
+          <ЗначенияСвойства><Ид>prop-size</Ид><Значение>M</Значение></ЗначенияСвойства>
+        </ЗначенияСвойств>
+      </Товар>
+    </Товары>
+  </Каталог>
+</КоммерческаяИнформация>
+XML;
+
+        $this->postRaw(
+            "http://test.atlascms.ru/1c/exchange?type=catalog&mode=file&filename=import.xml&session_id={$sessionId}",
+            $importXml
+        )->assertOk();
+
+        $this->post(
+            "http://test.atlascms.ru/1c/exchange?type=catalog&mode=import&filename=import.xml&session_id={$sessionId}",
+            [],
+            $this->basicHeaders()
+        )->assertOk();
+
+        $product = Product::query()->where('ext_id', 'prod-2')->first();
+        $this->assertNotNull($product);
+
+        $color = $product->features()->where('name', 'Цвет')->first();
+        $this->assertNotNull($color);
+        $this->assertTrue($color->is_variant);
+        $this->assertSame(['Красный', 'Синий'], $color->options);
+
+        $size = $product->features()->where('name', 'Размер')->first();
+        $this->assertNotNull($size);
+        $this->assertTrue($size->is_variant);
+        $this->assertSame(['M'], $size->options);
     }
 }

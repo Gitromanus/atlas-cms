@@ -3,6 +3,7 @@
 namespace App\Providers\Filament;
 
 use App\Http\Middleware\SetFilamentTenant;
+use App\Services\Tenant\TenantContext;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -23,10 +24,36 @@ use Illuminate\View\Middleware\ShareErrorsFromSession;
  * Админ-панель предпринимателя (владельца магазина).
  *
  * Здесь владелец управляет СВОИМ магазином: каталог, заказы, покупатели,
- * настройки (тема, дизайн, обмен с 1С). Данные изолированы тенантом.
+ * настройки (тема, обмен с 1С). Данные изолированы тенантом.
  */
 class ShopPanelProvider extends PanelProvider
 {
+    public function boot(): void
+    {
+        \Filament\Support\Facades\FilamentView::registerRenderHook(
+            \Filament\View\PanelsRenderHook::USER_MENU_BEFORE,
+            fn (): string => view('filament.partials.open-site', [
+                'url' => $this->shopUrl(),
+            ])->render(),
+        );
+    }
+
+    /**
+     * Ссылка на витрину текущего магазина владельца.
+     */
+    protected function shopUrl(): string
+    {
+        $user = auth()->user();
+
+        if ($user === null) {
+            return '#';
+        }
+
+        // В контексте панели /shop тенант — магазин владельца (либо контекст запроса)
+        $tenant = $user->tenant ?? app(TenantContext::class)->current();
+
+        return $tenant?->url() ?? '#';
+    }
     public function panel(Panel $panel): Panel
     {
         return $panel

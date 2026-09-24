@@ -27,6 +27,15 @@ use Illuminate\View\Middleware\ShareErrorsFromSession;
  */
 class PlatformPanelProvider extends PanelProvider
 {
+    public function boot(): void
+    {
+        \Filament\Support\Facades\FilamentView::registerRenderHook(
+            \Filament\View\PanelsRenderHook::USER_MENU_BEFORE,
+            fn (): string => view('filament.partials.open-site', [
+                'url' => url('/'),
+            ])->render(),
+        );
+    }
     public function panel(Panel $panel): Panel
     {
         return $panel

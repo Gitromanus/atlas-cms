@@ -3,6 +3,8 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToTenant;
+use App\Services\Tenant\TenantContext;
+use App\Support\Slugger;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -35,14 +37,55 @@ class Product extends Model
         ];
     }
 
+    protected static function booted(): void
+    {
+        static::saving(function (self $model) {
+            if (blank($model->slug) && $model->name) {
+                $model->slug = $model->uniqueSlug();
+            }
+        });
+    }
+
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
     }
 
+    /**
+     * Уникальный slug в пределах магазина (кириллица → латиница).
+     */
+    public function uniqueSlug(): string
+    {
+        $base = Slugger::slug($this->name) ?: 'tovar';
+        $tenantId = $this->tenant_id ?? app(TenantContext::class)->id();
+
+        $slug = $base;
+        $i = 2;
+
+        while (static::query()
+            ->where('tenant_id', $tenantId)
+            ->where('slug', $slug)
+            ->whereKeyNot($this->getKey())
+            ->exists()) {
+            $slug = $base.'-'.$i++;
+        }
+
+        return $slug;
+    }
+
     public function features(): HasMany
     {
         return $this->hasMany(ProductFeature::class)->orderBy('sort_order');
+    }
+
+    /**
+     * Вариантные свойства товара (цвет, размер и т.п.) — участвуют в выборе на витрине.
+     *
+     * @return \Illuminate\Support\Collection<int, ProductFeature>
+     */
+    public function variantFeatures(): \Illuminate\Support\Collection
+    {
+        return $this->features->where('is_variant', true)->values();
     }
 
     public function prices(): HasMany
@@ -94,6 +137,15 @@ class Product extends Model
         return $price !== null ? (float) $price->price : null;
     }
 
+    /**
+     * Товар доступен к заказу: нет записей остатков (значит остаток не ведётся)
+     * или суммарный остаток положительный.
+     */
+    public function isAvailable(): bool
+    {
+        return $this->stocks()->count() === 0 || $this->stockTotal() > 0;
+    }
+
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('is_active', true)
@@ -102,6 +154,9 @@ class Product extends Model
 
     public function scopeInStock(Builder $query): Builder
     {
-        return $query->whereHas('stocks', fn (Builder $q) => $q->where('quantity', '>', 0));
+        return $query->where(function (Builder $q) {
+            $q->whereDoesntHave('stocks')
+                ->orWhereHas('stocks', fn (Builder $sq) => $sq->where('quantity', '>', 0));
+        });
     }
 }

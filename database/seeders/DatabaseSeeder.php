@@ -54,10 +54,6 @@ class DatabaseSeeder extends Seeder
                         'radius' => '0.75rem',
                         'font_family' => "'Inter', 'Segoe UI', system-ui, sans-serif",
                     ],
-                    'exchange' => [
-                        'login' => '1c',
-                        'password' => Hash::make('1csecret'),
-                    ],
                 ],
             ]
         );

@@ -21,7 +21,8 @@ use Illuminate\Support\Facades\Hash;
  * Точка входа: /1c/exchange
  * Параметры: type (catalog|sale), mode (checkauth|init|file|import|query|success|failure)
  *
- * Авторизация: HTTP Basic (логин/пароль из настроек магазина).
+ * Авторизация: HTTP Basic (email и пароль владельца магазина — учётная запись
+ * пользователя панели /shop, привязанная к тенанту).
  */
 class ExchangeController extends Controller
 {
@@ -63,12 +64,15 @@ class ExchangeController extends Controller
         $login = $request->getUser();
         $password = $request->getPassword();
 
-        $expectedLogin = $tenant->setting('exchange.login');
-        $expectedPassword = $tenant->setting('exchange.password');
+        // Учётные данные обмена = учётная запись владельца магазина (панель /shop).
+        $owner = $tenant->owner;
 
-        if ($login === null || $expectedLogin === null
-            || ! hash_equals((string) $expectedLogin, (string) $login)
-            || ! Hash::check((string) $password, (string) $expectedPassword)) {
+        $valid = $owner !== null
+            && $login !== null
+            && hash_equals(strtolower((string) $owner->email), strtolower($login))
+            && Hash::check((string) $password, (string) $owner->password);
+
+        if (! $valid) {
             $this->log($tenant, (string) $request->query('type', 'catalog'), 'checkauth', null, 'failure', 'Неверные учётные данные обмена');
 
             return response('failure');

@@ -37,9 +37,20 @@ class CartService
         return $query->whereNull('customer_id')->where('session_id', $this->sessionKey());
     }
 
-    public function add(Product $product, int $quantity = 1): CartItem
+    /**
+     * Добавление товара в корзину с учётом выбранных вариантов
+     * (например, ["Цвет" => "Красный", "Размер" => "M"]).
+     *
+     * @param  array<string, string>  $options
+     */
+    public function add(Product $product, int $quantity = 1, array $options = []): CartItem
     {
-        $item = $this->query()->where('product_id', $product->id)->first();
+        $optionsJson = $this->normalizeOptions($options);
+
+        $item = $this->query()
+            ->where('product_id', $product->id)
+            ->where('options', $optionsJson)
+            ->first();
 
         if ($item !== null) {
             $item->increment('quantity', $quantity);
@@ -53,8 +64,19 @@ class CartService
             'customer_id' => $customer?->id,
             'session_id' => $customer === null ? $this->sessionKey() : null,
             'product_id' => $product->id,
+            'options' => $options,
             'quantity' => max(1, $quantity),
         ]);
+    }
+
+    /**
+     * Нормализация вариантов: пустой выбор хранится как NULL.
+     */
+    protected function normalizeOptions(array $options): ?string
+    {
+        $filtered = array_filter($options, fn ($v) => $v !== null && $v !== '');
+
+        return $filtered === [] ? null : json_encode($filtered, JSON_UNESCAPED_UNICODE);
     }
 
     public function setQuantity(CartItem $item, int $quantity): void
@@ -108,6 +130,7 @@ class CartService
             $existing = CartItem::query()
                 ->where('customer_id', $customer->id)
                 ->where('product_id', $guestItem->product_id)
+                ->where('options', $this->normalizeOptions($guestItem->options ?? []))
                 ->first();
 
             if ($existing !== null) {

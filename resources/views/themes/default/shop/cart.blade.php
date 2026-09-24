@@ -26,6 +26,13 @@
                         <a href="{{ route('product.show', $item->product->slug ?: $item->product->id) }}" class="font-semibold hover:text-primary">
                             {{ $item->product->name }}
                         </a>
+                        @if (! empty($item->options))
+                            <p class="mt-0.5 text-xs text-slate-500">
+                                @foreach ($item->options as $key => $value)
+                                    {{ $key }}: <span class="font-medium">{{ $value }}</span>@if (! $loop->last) · @endif
+                                @endforeach
+                            </p>
+                        @endif
                         <p class="text-sm text-slate-500">{{ number_format($item->product->price ?? 0, 0, ',', ' ') }} ₽ / шт.</p>
                     </div>
 

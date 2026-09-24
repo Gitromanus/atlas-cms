@@ -33,7 +33,10 @@ class ProductImage extends Model
         }
 
         if ($this->path) {
-            return asset('storage/products/'.$this->path);
+            // path хранится относительно диска public: products/{tenant}/file.jpg или {tenant}/file.jpg
+            $prefix = str_starts_with($this->path, 'products/') ? '' : 'products/';
+
+            return asset('storage/'.$prefix.$this->path);
         }
 
         return null;

@@ -27,10 +27,12 @@ class CartController extends Controller
         $validated = $request->validate([
             'product_id' => ['required', 'exists:products,id'],
             'quantity' => ['nullable', 'integer', 'min:1', 'max:999'],
+            'options' => ['nullable', 'array'],
+            'options.*' => ['nullable', 'string', 'max:255'],
         ]);
 
         $product = Product::query()->active()->findOrFail($validated['product_id']);
-        $this->cart->add($product, $validated['quantity'] ?? 1);
+        $this->cart->add($product, $validated['quantity'] ?? 1, $validated['options'] ?? []);
 
         return back()->with('status', 'Товар добавлен в корзину');
     }

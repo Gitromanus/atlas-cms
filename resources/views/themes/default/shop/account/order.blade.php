@@ -28,7 +28,16 @@
             <dl class="divide-y divide-slate-100 text-sm">
                 @foreach ($order->items as $item)
                     <div class="flex justify-between gap-4 py-2">
-                        <dt>{{ $item->product_name }} × {{ $item->quantity }}</dt>
+                        <dt>
+                            {{ $item->product_name }} × {{ $item->quantity }}
+                            @if (! empty($item->options))
+                                <span class="block text-xs text-slate-500">
+                                    @foreach ($item->options as $key => $value)
+                                        {{ $key }}: {{ $value }}@if (! $loop->last) · @endif
+                                    @endforeach
+                                </span>
+                            @endif
+                        </dt>
                         <dd class="font-medium">{{ number_format($item->total, 0, ',', ' ') }} ₽</dd>
                     </div>
                 @endforeach
