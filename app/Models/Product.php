@@ -44,10 +44,15 @@ class Product extends Model
                 $model->slug = $model->uniqueSlug();
             }
 
-            // Регистронезависимый поиск: дубликат «название + артикул» в нижнем регистре
-            // (SQLite LOWER() не работает с кириллицей, поэтому нормализуем в PHP)
             $model->search_name = mb_strtolower(trim(($model->name ?? '').' '.($model->sku ?? '')));
         });
+    }
+
+    public function resolveRouteBinding($value, $field = null)
+    {
+        $field = $field ?: 'slug';
+
+        return static::query()->where($field, $value)->first() ?? abort(404);
     }
 
     public function category(): BelongsTo
@@ -55,9 +60,6 @@ class Product extends Model
         return $this->belongsTo(Category::class);
     }
 
-    /**
-     * Уникальный slug в пределах магазина (кириллица → латиница).
-     */
     public function uniqueSlug(): string
     {
         $base = Slugger::slug($this->name) ?: 'tovar';
@@ -84,37 +86,21 @@ class Product extends Model
             ->orderBy('id');
     }
 
-    /**
-     * Вариантные свойства товара (цвет, размер и т.п.) — участвуют в выборе на витрине.
-     *
-     * @return \Illuminate\Support\Collection<int, ProductFeature>
-     */
     public function variantFeatures(): \Illuminate\Support\Collection
     {
         return $this->features->where('is_variant', true)->values();
     }
 
-    /**
-     * Реальные варианты из 1С: комбинации характеристик с остатками.
-     */
     public function variants(): HasMany
     {
         return $this->hasMany(ProductVariant::class);
     }
 
-    /**
-     * Есть ли у товара варианты с характеристиками.
-     */
     public function hasVariants(): bool
     {
         return $this->variants()->whereNotNull('options')->exists();
     }
 
-    /**
-     * Остаток конкретного варианта (комбинации характеристик) или null, если такого варианта нет.
-     *
-     * @param  array<string, string>  $options
-     */
     public function variantQuantity(array $options): ?float
     {
         if ($options === []) {
@@ -132,11 +118,6 @@ class Product extends Model
         return null;
     }
 
-    /**
-     * Минимальная и максимальная цена среди вариантов (для списка товаров).
-     *
-     * @return array{min: float, max: float}|null
-     */
     public function variantPriceRange(): ?array
     {
         $prices = $this->variants
@@ -155,17 +136,11 @@ class Product extends Model
         ];
     }
 
-    /**
-     * Суммарный остаток всех вариантов (для списка товаров).
-     */
     public function variantStockTotal(): float
     {
         return (float) $this->variants->sum('quantity');
     }
 
-    /**
-     * Нормализация карты «имя свойства → значение» для сравнения без учёта порядка ключей.
-     */
     protected function normalizeOptionsMap(array $map): array
     {
         $result = [];
@@ -212,28 +187,22 @@ class Product extends Model
         });
     }
 
-    /**
-     * Суммарный остаток по всем складам.
-     */
     public function stockTotal(): float
     {
         return (float) $this->stocks()->sum('quantity');
     }
 
-    /**
-     * Актуальная цена товара (наименьшая из доступных типов цен).
-     */
     public function getPriceAttribute(): ?float
     {
-        $price = $this->prices()->orderBy('price')->first();
+        if ($this->relationLoaded('prices')) {
+            $price = $this->prices->sortBy('price')->first();
+        } else {
+            $price = $this->prices()->orderBy('price')->first();
+        }
 
         return $price !== null ? (float) $price->price : null;
     }
 
-    /**
-     * Товар доступен к заказу: нет записей остатков (значит остаток не ведётся)
-     * или суммарный остаток положительный.
-     */
     public function isAvailable(): bool
     {
         return $this->stocks()->count() === 0 || $this->stockTotal() > 0;
