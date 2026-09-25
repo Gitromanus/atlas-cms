@@ -6,6 +6,7 @@ use App\Models\Tenant;
 use App\Models\Theme;
 use App\Services\Tenant\TenantContext;
 use Filament\Actions\Action;
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Components\Select;
@@ -55,6 +56,7 @@ class ShopSettings extends Page implements HasForms
             'hours' => (string) ($settings['hours'] ?? ''),
             'about' => (string) ($settings['about'] ?? ''),
             'min_order_sum' => $settings['min_order_sum'] ?? null,
+            'logo_path' => $tenant->logo_path,
         ]);
     }
 
@@ -65,6 +67,14 @@ class ShopSettings extends Page implements HasForms
                 Section::make('Основное')
                     ->schema([
                         TextInput::make('name')->label('Название магазина')->required(),
+                        FileUpload::make('logo_path')
+                            ->label('Логотип')
+                            ->disk('public')
+                            ->directory('logos')
+                            ->image()
+                            ->imagePreviewHeight('80')
+                            ->maxSize(2048)
+                            ->nullable(),
                         TextInput::make('slug')
                             ->label('Адрес витрины (slug)')
                             ->required()
@@ -76,7 +86,7 @@ class ShopSettings extends Page implements HasForms
                     ])
                     ->columns(2),
                 Section::make('Контакты для покупателей')
-                    ->description('Телефон и часы — в верхней полосе. Остальное — в подвале витрины.')
+                    ->description('Телефон — в шапке и подвале; адрес, часы и описание — в подвале.')
                     ->schema([
                         TextInput::make('phone')
                             ->label('Телефон')
@@ -85,7 +95,8 @@ class ShopSettings extends Page implements HasForms
                         TextInput::make('email')
                             ->label('Email')
                             ->email()
-                            ->placeholder('shop@example.com'),
+                            ->placeholder('shop@example.com')
+                            ->helperText('Сюда приходят письма о новых заказах'),
                         TextInput::make('address')
                             ->label('Адрес')
                             ->columnSpanFull(),
@@ -186,12 +197,18 @@ class ShopSettings extends Page implements HasForms
         $min = $data['min_order_sum'] ?? null;
         $settings['min_order_sum'] = ($min !== null && $min !== '') ? (float) $min : null;
 
+        $logo = $data['logo_path'] ?? null;
+        if (is_array($logo)) {
+            $logo = $logo[0] ?? null;
+        }
+
         $tenant->forceFill([
             'name' => $data['name'],
             'slug' => $slug,
             'subdomain' => $slug,
             'theme_id' => $data['theme_id'] ?: null,
             'is_active' => (bool) ($data['is_active'] ?? false),
+            'logo_path' => $logo ?: $tenant->logo_path,
             'settings' => $settings,
         ])->save();
 
@@ -201,7 +218,7 @@ class ShopSettings extends Page implements HasForms
 
         Notification::make()
             ->title('Настройки сохранены')
-            ->body('Контакты появятся на витрине после обновления страницы.')
+            ->body('Контакты и логотип обновятся на витрине после обновления страницы.')
             ->success()
             ->send();
     }
