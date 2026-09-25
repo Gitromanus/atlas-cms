@@ -30,17 +30,43 @@
     <style>[x-cloak]{display:none!important}</style>
     @stack('head')
 </head>
-<body class="min-h-screen bg-slate-50 text-slate-800 antialiased">
+<body class="flex min-h-screen flex-col bg-slate-50 text-slate-800 antialiased">
+@php
+    $shopName = $currentTenant?->name ?? 'Магазин';
+    $phone = $currentTenant?->setting('phone');
+    $email = $currentTenant?->setting('email');
+    $address = $currentTenant?->setting('address');
+    $hours = $currentTenant?->setting('hours');
+    $about = $currentTenant?->setting('about');
+@endphp
+
+@if ($phone || $hours)
+    <div class="border-b border-slate-200 bg-white text-sm text-slate-600">
+        <div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-1.5">
+            <div class="flex flex-wrap items-center gap-4">
+                @if ($phone)
+                    <a href="tel:{{ preg_replace('/[^\\d+]/', '', $phone) }}" class="font-medium text-primary hover:underline">{{ $phone }}</a>
+                @endif
+                @if ($hours)
+                    <span class="text-slate-500">{{ $hours }}</span>
+                @endif
+            </div>
+            @if ($email)
+                <a href="mailto:{{ $email }}" class="hidden text-slate-500 hover:text-primary sm:inline">{{ $email }}</a>
+            @endif
+        </div>
+    </div>
+@endif
 
 <header class="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
     <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
-        <a href="{{ route('home') }}" class="flex items-center gap-2">
+        <a href="{{ route('home') }}" class="flex shrink-0 items-center gap-2">
             @if ($currentTenant?->logo_path)
-                <img src="{{ asset('storage/logos/'.$currentTenant->logo_path) }}" alt="{{ $currentTenant->name }}" class="h-8 w-8 rounded-theme object-cover">
+                <img src="{{ asset('storage/logos/'.$currentTenant->logo_path) }}" alt="{{ $shopName }}" class="h-8 w-8 rounded-theme object-cover">
             @else
                 <span class="flex h-8 w-8 items-center justify-center rounded-theme bg-primary font-black text-white">A</span>
             @endif
-            <span class="text-lg font-bold">{{ $currentTenant?->name ?? 'Магазин' }}</span>
+            <span class="text-lg font-bold">{{ $shopName }}</span>
         </a>
 
         <nav class="hidden items-center gap-5 md:flex">
@@ -53,7 +79,21 @@
             @endforeach
         </nav>
 
+        <form action="{{ route('catalog.index') }}" method="GET" class="hidden max-w-xs flex-1 lg:block">
+            <div class="relative">
+                <input type="search" name="q" value="{{ request('q') }}"
+                       placeholder="Поиск товаров…"
+                       class="w-full rounded-full border border-slate-200 bg-slate-50 py-1.5 pl-3 pr-9 text-sm focus:border-primary focus:bg-white focus:outline-none">
+                <button type="submit" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-primary" aria-label="Найти">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>
+                </button>
+            </div>
+        </form>
+
         <div class="flex items-center gap-3">
+            <a href="{{ route('catalog.index') }}" class="p-1.5 text-slate-600 transition hover:text-primary lg:hidden" title="Поиск / каталог">
+                <svg class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>
+            </a>
             <a href="{{ route('cart.index') }}" class="relative p-1.5 text-slate-600 transition hover:text-primary" title="Корзина">
                 <svg class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z"/>
@@ -99,10 +139,48 @@
     @yield('content')
 </main>
 
-<footer class="border-t border-slate-200 bg-white">
-    <div class="mx-auto flex max-w-6xl flex-col items-center justify-between gap-2 px-4 py-6 text-sm text-slate-500 md:flex-row">
-        <span>© {{ date('Y') }} {{ $currentTenant?->name ?? 'Магазин' }}</span>
-        <span>Работает на AtlasCMS</span>
+<footer class="mt-auto border-t border-slate-200 bg-white">
+    <div class="mx-auto grid max-w-6xl gap-8 px-4 py-10 sm:grid-cols-2 lg:grid-cols-3">
+        <div>
+            <p class="text-base font-bold text-slate-900">{{ $shopName }}</p>
+            @if ($about)
+                <p class="mt-2 text-sm leading-relaxed text-slate-600">{{ $about }}</p>
+            @endif
+        </div>
+        <div class="text-sm text-slate-600">
+            <p class="font-semibold text-slate-900">Контакты</p>
+            <ul class="mt-2 space-y-1">
+                @if ($phone)
+                    <li><a href="tel:{{ preg_replace('/[^\\d+]/', '', $phone) }}" class="hover:text-primary">{{ $phone }}</a></li>
+                @endif
+                @if ($email)
+                    <li><a href="mailto:{{ $email }}" class="hover:text-primary">{{ $email }}</a></li>
+                @endif
+                @if ($address)
+                    <li>{{ $address }}</li>
+                @endif
+                @if ($hours)
+                    <li class="text-slate-500">{{ $hours }}</li>
+                @endif
+                @if (! $phone && ! $email && ! $address)
+                    <li class="text-slate-400">Контакты скоро появятся</li>
+                @endif
+            </ul>
+        </div>
+        <div class="text-sm text-slate-600">
+            <p class="font-semibold text-slate-900">Покупателям</p>
+            <ul class="mt-2 space-y-1">
+                <li><a href="{{ route('catalog.index') }}" class="hover:text-primary">Каталог</a></li>
+                <li><a href="{{ route('cart.index') }}" class="hover:text-primary">Корзина</a></li>
+                <li><a href="{{ route('account.orders') }}" class="hover:text-primary">Мои заказы</a></li>
+            </ul>
+        </div>
+    </div>
+    <div class="border-t border-slate-100">
+        <div class="mx-auto flex max-w-6xl flex-col items-center justify-between gap-2 px-4 py-4 text-xs text-slate-400 md:flex-row">
+            <span>© {{ date('Y') }} {{ $shopName }}</span>
+            <span>Работает на AtlasCMS</span>
+        </div>
     </div>
 </footer>
 
