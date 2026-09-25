@@ -5,16 +5,25 @@
 @section('content')
     <div class="grid gap-8 md:grid-cols-2">
         <div class="overflow-hidden rounded-theme bg-white shadow-sm">
-            @if ($product->images->isNotEmpty())
-                <div x-data="{ active: 0, images: {{ $product->images->pluck('url')->map(fn ($u) => $u)->toJson() }} }">
+            @php
+                $imageUrls = $product->images
+                    ->map(fn ($img) => $img->url)
+                    ->filter()
+                    ->values()
+                    ->all();
+            @endphp
+            @if (count($imageUrls) > 0)
+                <div x-data="{ active: 0, images: {{ \Illuminate\Support\Js::from($imageUrls) }} }">
                     <img :src="images[active]" alt="{{ $product->name }}" class="aspect-square w-full object-cover">
-                    <div class="flex gap-2 p-3">
-                        @foreach ($product->images as $index => $image)
-                            <img src="{{ $image->url }}" alt="" @click="active = {{ $index }}"
-                                 class="h-16 w-16 cursor-pointer rounded-theme object-cover"
-                                 :class="active === {{ $index }} ? 'ring-2 ring-primary' : ''">
-                        @endforeach
-                    </div>
+                    @if (count($imageUrls) > 1)
+                        <div class="flex gap-2 p-3">
+                            @foreach ($imageUrls as $index => $imageUrl)
+                                <img src="{{ $imageUrl }}" alt="" @click="active = {{ $index }}"
+                                     class="h-16 w-16 cursor-pointer rounded-theme object-cover"
+                                     :class="active === {{ $index }} ? 'ring-2 ring-primary' : ''">
+                            @endforeach
+                        </div>
+                    @endif
                 </div>
             @else
                 <div class="flex aspect-square items-center justify-center bg-slate-100 text-6xl text-slate-300">🛍️</div>
@@ -36,7 +45,7 @@
             @endif
 
             <p class="mt-4 text-3xl font-extrabold text-primary">
-                {{ $product->price !== null ? number_format($product->price, 0, ',', ' ') . ' ₽' : 'Цена по запросу' }}
+                {{ $product->price !== null ? number_format((float) $product->price, 0, ',', ' ') . ' ₽' : 'Цена по запросу' }}
             </p>
 
             <p class="mt-2 text-sm {{ $product->isAvailable() ? 'text-green-600' : 'text-red-500' }}">
@@ -48,14 +57,11 @@
             @endif
 
             @php
-                // Реальные варианты из 1С: только существующие комбинации характеристик
                 $variantCombos = $product->variants
                     ->filter(fn ($v) => filled($v->options))
                     ->map(fn ($v) => ['options' => $v->options, 'quantity' => (float) $v->quantity])
                     ->values();
 
-                // Списки значений строятся из реальных комбинаций 1С (а не из перекрёстного произведения),
-                // в порядке, заданном в админке перетаскиванием тегов. Если порядок не задан — порядок появления в 1С
                 $variantSelects = [];
                 foreach ($product->variantFeatures() as $vf) {
                     $existing = $variantCombos->pluck('options.'.$vf->name)->filter()->unique()->values();
@@ -166,7 +172,6 @@
             </script>
 
             @php
-                // Вариантные свойства (цвет, размер) показаны в пикере выше — не дублируем их в таблице характеристик
                 $plainFeatures = $product->features->reject(fn ($feature) => $feature->is_variant);
             @endphp
 
