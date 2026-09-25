@@ -203,4 +203,26 @@ class Product extends Model
                 ->orWhereHas('stocks', fn (Builder $sq) => $sq->where('quantity', '>', 0));
         });
     }
+
+    public function reviews(): HasMany
+    {
+        return $this->hasMany(ProductReview::class);
+    }
+
+    public function approvedReviews(): HasMany
+    {
+        return $this->hasMany(ProductReview::class)->where('is_approved', true)->latest();
+    }
+
+    public function averageRating(): ?float
+    {
+        $avg = $this->approvedReviews()->avg('rating');
+
+        return $avg !== null ? round((float) $avg, 1) : null;
+    }
+
+    public function reviewsCount(): int
+    {
+        return (int) $this->approvedReviews()->count();
+    }
 }
