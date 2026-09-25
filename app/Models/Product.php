@@ -48,14 +48,6 @@ class Product extends Model
         });
     }
 
-    public function resolveRouteBinding($value, $field = null)
-    {
-        // Filament: id; витрина: {product:slug}. Не форсировать slug.
-        $field = $field ?? $this->getRouteKeyName();
-
-        return static::query()->where($field, $value)->first() ?? abort(404);
-    }
-
     public function category(): BelongsTo
     {
         return $this->belongsTo(Category::class);
@@ -174,19 +166,7 @@ class Product extends Model
 
     public function mainImage(): HasOne
     {
-        // Без oldestOfMany: с BelongsToTenant global scope даёт SQL 500
         return $this->hasOne(ProductImage::class)->orderBy('sort_order')->orderBy('id');
-    }
-
-    public function defaultPrice(): HasOne
-    {
-        return $this->hasOne(ProductPrice::class)->ofMany([
-            'id' => 'max',
-        ], function (Builder $query) {
-            $query->whereHas('priceType', function (Builder $q) {
-                $q->where('name', 'like', '%розн%');
-            });
-        });
     }
 
     public function stockTotal(): float
