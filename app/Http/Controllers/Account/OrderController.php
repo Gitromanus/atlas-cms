@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Account;
 
 use App\Http\Controllers\Controller;
 use App\Models\Order;
+use Illuminate\Http\Request;
 use Illuminate\View\View;
 
 class OrderController extends Controller
@@ -15,18 +16,24 @@ class OrderController extends Controller
         $orders = Order::query()
             ->where('customer_id', $customer->id)
             ->with('status')
-            ->latest()
+            ->latest('placed_at')
+            ->latest('id')
             ->get();
 
         return view('shop.account.orders', compact('orders'));
     }
 
-    public function show(Order $order): View
+    public function show(Request $request, string $shop, int|string $order): View
     {
-        abort_unless($order->customer_id === auth('customers')->id(), 404);
+        $customer = auth('customers')->user();
 
-        $order->load(['items', 'status']);
+        $model = Order::query()
+            ->with(['items', 'status'])
+            ->whereKey($order)
+            ->firstOrFail();
 
-        return view('shop.account.order', compact('order'));
+        abort_unless((int) $model->customer_id === (int) $customer->id, 404);
+
+        return view('shop.account.order', ['order' => $model]);
     }
 }

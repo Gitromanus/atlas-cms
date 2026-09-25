@@ -19,7 +19,7 @@ class CheckoutController extends Controller
         protected OrderService $orders,
     ) {}
 
-    public function index(): View
+    public function index(): View|RedirectResponse
     {
         if ($this->cart->count() === 0) {
             return redirect()->route('cart.index');
@@ -56,13 +56,19 @@ class CheckoutController extends Controller
 
         $order = $this->orders->create($validated);
 
-        return redirect()->route('checkout.success', $order);
+        return redirect()->route('checkout.success', [
+            'shop' => app(TenantContext::class)->current()?->slug,
+            'order' => $order->id,
+        ]);
     }
 
-    public function success(Order $order): View
+    public function success(Request $request, string $shop, int|string $order): View
     {
-        $order->load('items');
+        $model = Order::query()
+            ->with(['items', 'status'])
+            ->whereKey($order)
+            ->firstOrFail();
 
-        return view('shop.order-success', compact('order'));
+        return view('shop.order-success', ['order' => $model]);
     }
 }

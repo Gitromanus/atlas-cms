@@ -12,7 +12,7 @@ class HomeController extends Controller
     {
         $products = Product::query()
             ->active()
-            ->with(['images', 'category', 'features', 'variants', 'prices'])
+            ->with(['images', 'category', 'features', 'variants', 'prices', 'stocks'])
             ->inStock()
             ->latest()
             ->limit(8)
