@@ -6,9 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductFeature;
+use App\Models\ProductPrice;
 use App\Models\ProductVariant;
 use Illuminate\Http\Request;
-use Illuminate\Support\Collection;
 use Illuminate\View\View;
 
 class CatalogController extends Controller
@@ -47,7 +47,7 @@ class CatalogController extends Controller
 
         $query = Product::query()
             ->active()
-            ->with(['images', 'category', 'features', 'variants', 'prices'])
+            ->with(['images', 'category', 'features', 'variants', 'prices', 'stocks'])
             ->when($category !== null, function ($q) use ($category) {
                 $q->whereIn('category_id', $category->descendantIds());
             })
@@ -97,14 +97,14 @@ class CatalogController extends Controller
     {
         match ($sort) {
             'price_asc' => $query->orderBy(
-                \App\Models\ProductPrice::query()
+                ProductPrice::query()
                     ->select('price')
                     ->whereColumn('product_prices.product_id', 'products.id')
                     ->orderBy('price')
                     ->limit(1)
             ),
             'price_desc' => $query->orderByDesc(
-                \App\Models\ProductPrice::query()
+                ProductPrice::query()
                     ->select('price')
                     ->whereColumn('product_prices.product_id', 'products.id')
                     ->orderBy('price')
@@ -115,10 +115,7 @@ class CatalogController extends Controller
         };
     }
 
-    /**
-     * @param  mixed  $raw
-     * @return array<string, list<string>>
-     */
+    /** @param mixed $raw @return array<string, list<string>> */
     protected function normalizeFilters(mixed $raw): array
     {
         if (! is_array($raw)) {
@@ -143,10 +140,7 @@ class CatalogController extends Controller
         return $out;
     }
 
-    /**
-     * @param  \Illuminate\Support\Collection<int, int|string>|array<int, int|string>  $productIds
-     * @return array<string, array{is_variant: bool, values: list<string>}>
-     */
+    /** @param mixed $productIds @return array<string, array{is_variant: bool, values: list<string>}> */
     protected function featureFilters($productIds): array
     {
         $productIds = collect($productIds)->filter()->values();
