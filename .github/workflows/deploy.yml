@@ -130,6 +130,40 @@ jobs:
           SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
           SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
 
+      - name: Диагностика подключения к MySQL (из .env на сервере)
+        run: |
+          PHP_CODE=$(cat <<'PHP'
+          <?php
+          $lines = file('.env'); $env = [];
+          foreach ($lines as $l) {
+              $l = trim($l);
+              if (str_starts_with($l, 'DB_') && str_contains($l, '=')) {
+                  [$k, $v] = explode('=', $l, 2);
+                  $env[$k] = trim($v);
+              }
+          }
+          echo 'PWD_LEN=' . strlen($env['DB_PASSWORD'] ?? '') . "\n";
+          try {
+              new PDO(
+                  'mysql:host=' . ($env['DB_HOST'] ?? '') . ';port=' . ($env['DB_PORT'] ?? '3306') . ';dbname=' . ($env['DB_DATABASE'] ?? ''),
+                  $env['DB_USERNAME'] ?? '',
+                  $env['DB_PASSWORD'] ?? ''
+              );
+              echo "MYSQL_OK\n";
+          } catch (Throwable $t) {
+              echo 'MYSQL_ERR: ' . $t->getMessage() . "\n";
+          }
+          PHP
+          )
+          B64=$(printf '%s' "$PHP_CODE" | base64 -w0)
+          sshpass -p "$SSH_PASSWORD" ssh -p "$SSH_PORT" -o StrictHostKeyChecking=no \
+            "$SSH_USERNAME@$SSH_HOST" "cd ~/public_html && echo $B64 | base64 -d > _dbcheck.php && php8.3 _dbcheck.php; rm -f _dbcheck.php"
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
+          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+
       - name: Миграции и базовый сид БД
         run: |
           # На хостинге CLI-php может быть старым (parse error в artisan).
