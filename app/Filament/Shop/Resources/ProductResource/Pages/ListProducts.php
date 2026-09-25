@@ -3,6 +3,7 @@
 namespace App\Filament\Shop\Resources\ProductResource\Pages;
 
 use App\Filament\Shop\Resources\ProductResource;
+use App\Models\Product;
 use Filament\Actions;
 use Filament\Resources\Pages\ListRecords;
 
@@ -13,14 +14,18 @@ class ListProducts extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            // Создание товара без ухода со списка
             Actions\CreateAction::make()
-                // Явно отключаем URL страницы создания, иначе действие станет ссылкой, а не модалом
                 ->url(null)
                 ->modal()
                 ->slideOver()
-                ->after(function (\App\Models\Product $record, array $data): void {
-                    \App\Filament\Shop\Resources\ProductResource::storeNewImages($record, $data['new_images'] ?? []);
+                ->using(function (array $data): Product {
+                    $paths = $data['new_images'] ?? [];
+                    unset($data['new_images']);
+
+                    $record = Product::query()->create($data);
+                    ProductResource::storeNewImages($record, is_array($paths) ? $paths : []);
+
+                    return $record;
                 }),
         ];
     }
