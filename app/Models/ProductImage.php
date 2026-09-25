@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\Storage;
 
 class ProductImage extends Model
 {
@@ -19,27 +20,34 @@ class ProductImage extends Model
         'sort_order',
     ];
 
+    protected static function booted(): void
+    {
+        static::deleting(function (self $image) {
+            if (filled($image->path)) {
+                Storage::disk('public')->delete($image->path);
+            }
+        });
+    }
+
     public function product(): BelongsTo
     {
         return $this->belongsTo(Product::class);
     }
 
-    /**
-     * Публичный URL изображения.
-     */
     public function getUrlAttribute(): ?string
     {
-        if ($this->attributes['url'] ?? null) {
-            return $this->attributes['url'];
+        $external = $this->attributes['url'] ?? null;
+        if (filled($external)) {
+            return $external;
         }
 
-        if ($this->path) {
-            // path хранится относительно диска public: products/{tenant}/file.jpg или {tenant}/file.jpg
-            $prefix = str_starts_with($this->path, 'products/') ? '' : 'products/';
-
-            return asset('storage/'.$prefix.$this->path);
+        $path = $this->attributes['path'] ?? null;
+        if (! filled($path)) {
+            return null;
         }
 
-        return null;
+        $relative = str_starts_with($path, 'products/') ? $path : 'products/'.$path;
+
+        return asset('storage/'.$relative);
     }
 }

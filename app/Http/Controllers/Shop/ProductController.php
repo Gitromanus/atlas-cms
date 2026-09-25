@@ -23,9 +23,9 @@ class ProductController extends Controller
 
         $related = Product::query()
             ->active()
-            ->where('id', '!=', $product->id)
+            ->whereKeyNot($product->id)
             ->when($product->category_id, fn ($q) => $q->where('category_id', $product->category_id))
-            ->with(['mainImage', 'features', 'variants', 'prices', 'stocks'])
+            ->with(['mainImage', 'images', 'features', 'variants', 'prices', 'stocks'])
             ->limit(4)
             ->get();
 

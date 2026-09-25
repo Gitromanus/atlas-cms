@@ -1,20 +1,22 @@
-<div>
-    @php
-        $record = $getRecord();
-        $path = $record ? data_get($record, 'path') : null;
-        $externalUrl = $record ? data_get($record, 'url') : null;
-        $src = filled($path)
-            ? \Illuminate\Support\Facades\Storage::disk('public')->url((string) $path)
-            : $externalUrl;
-    @endphp
+@php
+    $path = $get('../path') ?? $get('path');
+    $urlField = $get('../url') ?? $get('url');
+    $src = null;
+    if (filled($urlField)) {
+        $src = $urlField;
+    } elseif (filled($path)) {
+        $relative = str_starts_with((string) $path, 'products/') ? $path : 'products/'.$path;
+        $src = asset('storage/'.$relative);
+    }
+@endphp
 
-    @if (filled($src))
-        <img
-            src="{{ $src }}"
-            alt="Изображение товара"
-            style="max-width: 220px; max-height: 140px; object-fit: contain; border-radius: 0.5rem; border: 1px solid #e2e8f0;"
-        >
-    @else
-        <p class="text-sm text-gray-400">Изображение не задано</p>
-    @endif
-</div>
+@if ($src)
+    <div class="space-y-1">
+        <img src="{{ $src }}" alt="" class="h-28 w-full rounded-lg object-cover ring-1 ring-gray-200 dark:ring-white/10">
+        <p class="truncate text-[10px] text-gray-400">{{ $path ?? $urlField }}</p>
+    </div>
+@else
+    <div class="flex h-28 items-center justify-center rounded-lg border border-dashed border-gray-300 text-xs text-gray-400 dark:border-white/10">
+        нет превью
+    </div>
+@endif
