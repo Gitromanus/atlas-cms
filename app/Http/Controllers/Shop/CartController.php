@@ -27,12 +27,12 @@ class CartController extends Controller
         $validated = $request->validate([
             'product_id' => ['required', 'exists:products,id'],
             'quantity' => ['nullable', 'integer', 'min:1', 'max:999'],
-            'options' => ['nullable', 'array'],
-            'options.*' => ['nullable', 'string', 'max:255'],
+            // options приходит JSON-строкой из Alpine-пикера вариантов (см. product.blade.php)
+            'options' => ['nullable'],
         ]);
 
         $product = Product::query()->active()->findOrFail($validated['product_id']);
-        $options = $validated['options'] ?? [];
+        $options = $this->decodeOptions($validated['options'] ?? null);
 
         // Для товара с вариантами комбинация характеристик должна реально существовать в 1С
         if ($product->hasVariants() && $product->variantQuantity($options) === null) {
@@ -44,6 +44,26 @@ class CartController extends Controller
         $this->cart->add($product, $validated['quantity'] ?? 1, $options);
 
         return back()->with('status', 'Товар добавлен в корзину');
+    }
+
+    /**
+     * Приводит options (массив или JSON-строка из пикера вариантов) к массиву.
+     */
+    protected function decodeOptions(mixed $options): array
+    {
+        if (is_array($options)) {
+            return $options;
+        }
+
+        if (is_string($options) && $options !== '') {
+            $decoded = json_decode($options, true);
+
+            if (is_array($decoded)) {
+                return $decoded;
+            }
+        }
+
+        return [];
     }
 
     public function update(Request $request, CartItem $item): RedirectResponse

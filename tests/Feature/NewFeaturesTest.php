@@ -152,6 +152,30 @@ class NewFeaturesTest extends TestCase
         $this->assertSame(['Цвет' => 'Синий', 'Размер' => 'L'], $blueItem->options);
     }
 
+    public function test_cart_add_accepts_json_options_from_variant_picker(): void
+    {
+        $tenant = $this->makeTenant('cartjson');
+        app(TenantContext::class)->set($tenant);
+
+        $product = Product::query()->create([
+            'tenant_id' => $tenant->id,
+            'name' => 'Футболка с вариантами',
+            'is_active' => true,
+        ]);
+
+        // Пикер вариантов отправляет options JSON-строкой (см. product.blade.php)
+        $this->post('http://cartjson.atlascms.ru/cart/add', [
+            'product_id' => $product->id,
+            'quantity' => 2,
+            'options' => '{"Цвет":"Красный","Размер":"M"}',
+        ])->assertSessionHasNoErrors()->assertRedirect();
+
+        $items = app(CartService::class)->items();
+        $this->assertCount(1, $items);
+        $this->assertSame(2, $items->first()->quantity);
+        $this->assertSame(['Цвет' => 'Красный', 'Размер' => 'M'], $items->first()->options);
+    }
+
     public function test_menu_tree_has_unique_children_and_counts_subcategories(): void
     {
         $tenant = $this->makeTenant('menutree');

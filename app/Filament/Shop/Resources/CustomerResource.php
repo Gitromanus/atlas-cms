@@ -41,6 +41,8 @@ class CustomerResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            // Без перехода на страницу редактирования по клику на строку — правки в модальном окне
+            ->recordUrl(null)
             ->columns([
                 Tables\Columns\TextColumn::make('name')
                     ->label('Имя')
@@ -60,7 +62,11 @@ class CustomerResource extends Resource
                 //
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\EditAction::make()
+                    // Явно отключаем URL страницы ресурса, иначе действие станет ссылкой, а не модалом
+                    ->url(null)
+                    ->modal()
+                    ->slideOver(),
                 Tables\Actions\DeleteAction::make(),
             ])
             ->bulkActions([
