@@ -50,7 +50,7 @@
     <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
         <a href="{{ route('home') }}" class="flex shrink-0 items-center gap-2">
             @if ($tenant?->logo_path)
-                <img src="{{ asset('storage/logos/'.$tenant->logo_path) }}" alt="{{ $shopName }}" class="h-8 w-8 rounded-theme object-cover">
+                <img src="{{ asset('storage/'.ltrim($tenant->logo_path, '/')) }}" alt="{{ $shopName }}" class="h-8 w-8 rounded-theme object-cover">
             @else
                 <span class="flex h-8 w-8 items-center justify-center rounded-theme bg-primary font-black text-white">A</span>
             @endif
@@ -163,6 +163,7 @@
                 <li><a href="{{ route('catalog.index') }}" class="hover:text-primary">Каталог</a></li>
                 <li><a href="{{ route('cart.index') }}" class="hover:text-primary">Корзина</a></li>
                 <li><a href="{{ route('account.orders') }}" class="hover:text-primary">Мои заказы</a></li>
+                <li><a href="{{ route('order.track') }}" class="hover:text-primary">Статус заказа</a></li>
             </ul>
         </div>
     </div>
