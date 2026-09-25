@@ -56,6 +56,9 @@ class ShopSettings extends Page implements HasForms
             'hours' => (string) ($settings['hours'] ?? ''),
             'about' => (string) ($settings['about'] ?? ''),
             'min_order_sum' => $settings['min_order_sum'] ?? null,
+            'enable_articles' => (bool) ($settings['enable_articles'] ?? true),
+            'enable_news' => (bool) ($settings['enable_news'] ?? true),
+            'enable_reviews' => (bool) ($settings['enable_reviews'] ?? true),
             'logo_path' => $tenant->logo_path,
         ]);
     }
@@ -88,33 +91,24 @@ class ShopSettings extends Page implements HasForms
                 Section::make('Контакты для покупателей')
                     ->description('Телефон — в шапке и подвале; адрес, часы и описание — в подвале.')
                     ->schema([
-                        TextInput::make('phone')
-                            ->label('Телефон')
-                            ->tel()
-                            ->placeholder('+7 (999) 123-45-67'),
-                        TextInput::make('email')
-                            ->label('Email')
-                            ->email()
-                            ->placeholder('shop@example.com')
+                        TextInput::make('phone')->label('Телефон')->tel()->placeholder('+7 (999) 123-45-67'),
+                        TextInput::make('email')->label('Email')->email()->placeholder('shop@example.com')
                             ->helperText('Сюда приходят письма о новых заказах'),
-                        TextInput::make('address')
-                            ->label('Адрес')
-                            ->columnSpanFull(),
-                        TextInput::make('hours')
-                            ->label('Часы работы')
-                            ->placeholder('Пн–Пт 10:00–20:00')
-                            ->columnSpanFull(),
-                        Textarea::make('about')
-                            ->label('О магазине (коротко)')
-                            ->rows(3)
-                            ->columnSpanFull(),
-                        TextInput::make('min_order_sum')
-                            ->label('Мин. сумма заказа, ₽')
-                            ->numeric()
-                            ->minValue(0)
+                        TextInput::make('address')->label('Адрес')->columnSpanFull(),
+                        TextInput::make('hours')->label('Часы работы')->placeholder('Пн–Пт 10:00–20:00')->columnSpanFull(),
+                        Textarea::make('about')->label('О магазине (коротко)')->rows(3)->columnSpanFull(),
+                        TextInput::make('min_order_sum')->label('Мин. сумма заказа, ₽')->numeric()->minValue(0)
                             ->helperText('Пусто — без ограничения'),
                     ])
                     ->columns(2),
+                Section::make('Разделы витрины')
+                    ->description('Включение блоков на главной и пунктов меню')
+                    ->schema([
+                        Toggle::make('enable_articles')->label('Статьи'),
+                        Toggle::make('enable_news')->label('Новости'),
+                        Toggle::make('enable_reviews')->label('Отзывы к товарам'),
+                    ])
+                    ->columns(3),
                 Section::make('Свой домен')
                     ->description('Сейчас витрина: path платформы /{slug}. Свой домен — в следующем обновлении.')
                     ->schema([
@@ -196,6 +190,9 @@ class ShopSettings extends Page implements HasForms
         }
         $min = $data['min_order_sum'] ?? null;
         $settings['min_order_sum'] = ($min !== null && $min !== '') ? (float) $min : null;
+        $settings['enable_articles'] = (bool) ($data['enable_articles'] ?? false);
+        $settings['enable_news'] = (bool) ($data['enable_news'] ?? false);
+        $settings['enable_reviews'] = (bool) ($data['enable_reviews'] ?? false);
 
         $logo = $data['logo_path'] ?? null;
         if (is_array($logo)) {
