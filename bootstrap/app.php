@@ -5,6 +5,7 @@ use App\Http\Middleware\ResolveTenant;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -13,11 +14,14 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        // ResolveTenant ДО SubstituteBindings: иначе binding товара/категории
-        // идёт без TenantContext и ломает изоляцию на витрине.
-        $middleware->web(prepend: [
+        $middleware->web(append: [
             ResolveTenant::class,
         ]);
+
+        $middleware->prependToPriorityList(
+            before: SubstituteBindings::class,
+            prepend: ResolveTenant::class,
+        );
 
         $middleware->alias([
             'tenant' => EnsureTenant::class,
