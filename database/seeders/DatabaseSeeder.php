@@ -63,7 +63,6 @@ class DatabaseSeeder extends Seeder
             ['tenant_id' => $tenant->id, 'is_primary' => true]
         );
 
-        // Владелец демо-магазина
         User::query()->firstOrCreate(
             ['email' => 'owner@demo.ru'],
             [
@@ -73,7 +72,6 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // Статусы заказов
         foreach ([
             ['code' => 'new', 'name' => 'Новый'],
             ['code' => 'processing', 'name' => 'В обработке'],
@@ -97,10 +95,12 @@ class DatabaseSeeder extends Seeder
             []
         );
 
-        // --- Демо-каталог --------------------------------------------------
         if ($tenant->products()->count() === 0) {
             $this->seedDemoCatalog($tenant);
         }
+
+        // Каталог для магазина test@test.ru / odeza-i-obuv (одежда и обувь)
+        $this->call(FashionDemoSeeder::class);
     }
 
     protected function seedDemoCatalog(Tenant $tenant): void
@@ -115,7 +115,7 @@ class DatabaseSeeder extends Seeder
         ]);
 
         $warehouse = Warehouse::query()
-            ->where('tenant_id', $tenant->id)
+            ->where('tenant_id' => $tenant->id)
             ->where('name', 'Основной склад')
             ->first();
 
