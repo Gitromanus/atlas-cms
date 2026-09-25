@@ -3,49 +3,70 @@
 @section('title', 'Заказ №'.$order->number)
 
 @section('content')
-    <nav class="mb-4 text-sm text-slate-500">
-        <a href="{{ route('account.orders') }}" class="hover:text-primary">Мои заказы</a> → Заказ №{{ $order->number }}
-    </nav>
+    <a href="{{ route('account.orders') }}" class="mb-4 inline-block text-sm text-primary hover:underline">← Все заказы</a>
 
-    <h1 class="mb-6 text-3xl font-bold">Заказ №{{ $order->number }}</h1>
+    @php
+        $statusName = $order->status?->name ?? '—';
+        $badge = match ($statusName) {
+            'Новый' => 'bg-sky-100 text-sky-800',
+            'В обработке' => 'bg-amber-100 text-amber-800',
+            'Выполнен', 'Доставлен' => 'bg-emerald-100 text-emerald-800',
+            'Отменён' => 'bg-red-100 text-red-800',
+            default => 'bg-slate-100 text-slate-700',
+        };
+    @endphp
 
-    <div class="grid gap-6 md:grid-cols-2">
-        <div class="rounded-theme bg-white p-6 shadow-sm">
-            <h2 class="mb-3 text-lg font-bold">Данные заказа</h2>
-            <dl class="space-y-2 text-sm">
-                <div class="flex justify-between"><dt class="text-slate-500">Статус</dt><dd class="font-medium">{{ $order->status?->name }}</dd></div>
-                <div class="flex justify-between"><dt class="text-slate-500">Дата</dt><dd>{{ $order->placed_at?->format('d.m.Y H:i') }}</dd></div>
-                <div class="flex justify-between"><dt class="text-slate-500">Доставка</dt><dd>{{ $order->delivery_method }}</dd></div>
-                <div class="flex justify-between"><dt class="text-slate-500">Оплата</dt><dd>{{ $order->payment_method }}</dd></div>
-                @if ($order->delivery_address)
-                    <div class="flex justify-between gap-4"><dt class="text-slate-500">Адрес</dt><dd class="text-right">{{ $order->delivery_address }}</dd></div>
-                @endif
-            </dl>
+    <div class="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div>
+            <h1 class="text-3xl font-bold tracking-tight">Заказ №{{ $order->number }}</h1>
+            <p class="mt-1 text-sm text-slate-500">{{ $order->placed_at?->format('d.m.Y H:i') }}</p>
         </div>
+        <span class="inline-flex rounded-full px-3 py-1 text-sm font-semibold {{ $badge }}">{{ $statusName }}</span>
+    </div>
 
-        <div class="rounded-theme bg-white p-6 shadow-sm">
-            <h2 class="mb-3 text-lg font-bold">Состав заказа</h2>
-            <dl class="divide-y divide-slate-100 text-sm">
+    <div class="grid gap-6 lg:grid-cols-3">
+        <div class="lg:col-span-2 overflow-hidden rounded-theme bg-white shadow-sm">
+            <table class="w-full text-sm">
+                <thead class="border-b border-slate-100 bg-slate-50 text-left text-xs uppercase text-slate-500">
+                <tr>
+                    <th class="px-4 py-3">Товар</th>
+                    <th class="px-4 py-3 text-center">Кол-во</th>
+                    <th class="px-4 py-3 text-right">Сумма</th>
+                </tr>
+                </thead>
+                <tbody>
                 @foreach ($order->items as $item)
-                    <div class="flex justify-between gap-4 py-2">
-                        <dt>
-                            {{ $item->product_name }} × {{ $item->quantity }}
-                            @if (! empty($item->options))
-                                <span class="block text-xs text-slate-500">
-                                    @foreach ($item->options as $key => $value)
-                                        {{ $key }}: {{ $value }}@if (! $loop->last) · @endif
-                                    @endforeach
-                                </span>
+                    <tr class="border-b border-slate-50">
+                        <td class="px-4 py-3">
+                            <p class="font-medium">{{ $item->product_name }}</p>
+                            @if ($item->sku)
+                                <p class="text-xs text-slate-400">{{ $item->sku }}</p>
                             @endif
-                        </dt>
-                        <dd class="font-medium">{{ number_format($item->total, 0, ',', ' ') }} ₽</dd>
-                    </div>
+                        </td>
+                        <td class="px-4 py-3 text-center">{{ $item->quantity }}</td>
+                        <td class="px-4 py-3 text-right font-medium">{{ number_format($item->total, 0, ',', ' ') }} ₽</td>
+                    </tr>
                 @endforeach
-                <div class="flex justify-between gap-4 pt-3 font-bold">
-                    <dt>Итого</dt>
-                    <dd>{{ number_format($order->total, 0, ',', ' ') }} ₽</dd>
-                </div>
-            </dl>
+                </tbody>
+            </table>
+        </div>
+        <div class="space-y-4">
+            <div class="rounded-theme bg-white p-5 shadow-sm">
+                <p class="text-sm text-slate-500">Итого</p>
+                <p class="text-2xl font-extrabold">{{ number_format($order->total, 0, ',', ' ') }} ₽</p>
+                @if ($order->is_paid)
+                    <p class="mt-2 text-sm font-medium text-emerald-600">Оплачен</p>
+                @endif
+            </div>
+            <div class="rounded-theme bg-white p-5 text-sm shadow-sm">
+                <p class="font-semibold">Доставка</p>
+                <p class="mt-1 text-slate-600">{{ $order->delivery_method ?? '—' }}</p>
+                @if ($order->delivery_address)
+                    <p class="mt-1 text-slate-600">{{ $order->delivery_address }}</p>
+                @endif
+                <p class="mt-4 font-semibold">Оплата</p>
+                <p class="mt-1 text-slate-600">{{ $order->payment_method ?? '—' }}</p>
+            </div>
         </div>
     </div>
 @endsection

@@ -25,8 +25,7 @@
                         @continue(! $img->url)
                         <button type="button"
                                 class="product-thumb overflow-hidden rounded-lg ring-1 ring-slate-200 hover:ring-primary focus:outline-none focus:ring-2 focus:ring-primary"
-                                data-src="{{ $img->url }}"
-                                aria-label="Фото {{ $loop->iteration }}">
+                                data-src="{{ $img->url }}">
                             <img src="{{ $img->url }}" alt="" class="h-16 w-16 object-cover">
                         </button>
                     @endforeach
@@ -35,9 +34,7 @@
                     document.querySelectorAll('.product-thumb').forEach(function (btn) {
                         btn.addEventListener('click', function () {
                             var main = document.getElementById('product-main-image');
-                            if (main && btn.dataset.src) {
-                                main.src = btn.dataset.src;
-                            }
+                            if (main && btn.dataset.src) main.src = btn.dataset.src;
                         });
                     });
                 </script>
@@ -69,11 +66,22 @@
                 <div class="flex max-w-md items-center gap-3">
                     <input type="number" name="quantity" min="1" max="999" value="1"
                            class="w-20 rounded-theme border border-slate-300 py-2 text-center">
-                    <button type="submit" class="flex-1 rounded-theme bg-primary px-5 py-2 font-semibold text-white">
+                    <button type="submit" class="flex-1 rounded-theme bg-primary px-5 py-2.5 font-semibold text-white hover:opacity-90">
                         В корзину
                     </button>
                 </div>
             </form>
         </div>
     </div>
+
+    @if (isset($related) && $related->isNotEmpty())
+        <section class="mt-16">
+            <h2 class="mb-6 text-2xl font-bold tracking-tight">Похожие товары</h2>
+            <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+                @foreach ($related as $rel)
+                    @include('shop.partials.product-card', ['product' => $rel])
+                @endforeach
+            </div>
+        </section>
+    @endif
 @endsection
