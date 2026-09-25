@@ -115,12 +115,14 @@ jobs:
           SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
           SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
 
-      - name: Создание .env, если его ещё нет
+      - name: Синхронизация .env из секрета ENV_CONTENT
         run: |
           if [ -f deploy/.env ]; then
             sshpass -p "$SSH_PASSWORD" ssh -p "$SSH_PORT" -o StrictHostKeyChecking=no \
-              "$SSH_USERNAME@$SSH_HOST" "test -f ~/public_html/.env || cat > ~/public_html/.env" < deploy/.env
-            echo ".env создан на сервере"
+              "$SSH_USERNAME@$SSH_HOST" "cat > ~/public_html/.env" < deploy/.env
+            echo ".env обновлён на сервере из ENV_CONTENT"
+          else
+            echo "ENV_CONTENT не задан — .env на сервере не меняется"
           fi
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
