@@ -49,15 +49,14 @@ class CategoryResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            // Без перехода на страницу редактирования по клику на строку — редактирование в модале
             ->recordUrl(null)
             ->columns([
                 Tables\Columns\TextColumn::make('name')
                     ->label('Название')
                     ->searchable()
-                    // Сортировка отключена: порядок задаётся перетаскиванием строк (reorderable)
-                    // Дерево: подкатегории с отступами от уровня вложенности
-                    ->formatStateUsing(function (string $state, Category $record): string {
+                    ->formatStateUsing(function (?string $state, Category $record): string {
+                        $state = (string) ($state ?? '');
+
                         if ($record->depth === 0) {
                             return $state;
                         }
@@ -66,7 +65,6 @@ class CategoryResource extends Resource
                     }),
                 Tables\Columns\TextColumn::make('products_count')
                     ->label('Товаров')
-                    // Сумма прямых товаров и товаров всех подкатегорий (один запрос на таблицу)
                     ->state(fn (Category $record): int => $record->productCountWithChildren()),
                 Tables\Columns\IconColumn::make('is_active')
                     ->label('Активна')
@@ -76,7 +74,6 @@ class CategoryResource extends Resource
             ->defaultSort('sort_order')
             ->actions([
                 Tables\Actions\EditAction::make()
-                    // Явно отключаем URL страницы ресурса, иначе действие станет ссылкой, а не модалом
                     ->url(null)
                     ->modal()
                     ->slideOver(),
