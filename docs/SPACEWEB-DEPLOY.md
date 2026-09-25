@@ -6,12 +6,17 @@
 ## 0. Автоматический деплой через GitHub Actions
 
 В репозитории есть workflow [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml):
-при push в `main` он собирает `vendor` и загружает проект по FTP в корень
-FTP-сессии (`server-dir: .`). Для SpaceWeb FTP-доступ сразу открывает каталог сайта
-(`/home/n/netesngmai/public_html`), поэтому файлы попадают прямо в `public_html`
-(порт 21).
+при push в `main` он собирает **единый архив `atlas.zip`** (`scripts/build-archive.php`),
+загружает его по SCP (SSH) одним файлом, распаковывает на сервере (`unzip`),
+при необходимости создаёт `.env`, выполняет миграции и базовый сид
+(`php artisan migrate --force`, `db:seed --force`).
 
-Секреты репозитория: `FTP_SERVER`, `FTP_USERNAME`, `FTP_PASSWORD`, `FTP_PORT` (опционально).
+Секреты репозитория:
+- `SSH_HOST` — хост SSH (например, `77.222.40.198`);
+- `SSH_USERNAME` — логин SSH (например, `netesngmai`);
+- `SSH_PASSWORD` — пароль SSH (если не задан — используется `FTP_PASSWORD`);
+- `SSH_PORT` — порт SSH (по умолчанию 22);
+- `ENV_CONTENT` — полное содержимое `.env` (создаётся на сервере только при первом деплое).
 
 > Деплой **не затирает** на сервере: `.env`, базу данных, `storage/app`
 > (изображения и файлы обмена 1С), сессии, кэш и логи.

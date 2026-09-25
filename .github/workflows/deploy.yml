@@ -1,16 +1,25 @@
-# Деплой AtlasCMS на хостинг SpaceWeb по FTP.
+# Деплой AtlasCMS на SpaceWeb через SSH + архив.
 #
-# Секреты репозитория (Settings → Secrets and variables → Actions), ожидаемые имена:
-#   FTP_SERVER    — адрес FTP-сервера (например, ftp.your-site.ru или IP)
-#   FTP_USERNAME  — логин FTP (например, netesngmai)
-#   FTP_PASSWORD  — пароль FTP
-#   FTP_PORT      — порт (для SpaceWeb обычно 21); если не задан, берётся 21
+# Проект содержит тысячи файлов vendor/, которые не успевают загрузиться по
+# одному файлу через FTP в лимит времени. Поэтому CI:
+#   1) собирает единый архив atlas.zip (scripts/build-archive.php);
+#   2) заливает его по SCP (SSH) — один файл;
+#   3) распаковывает на сервере через unzip (SSH);
+#   4) создаёт .env, если его ещё нет (из секрета ENV_CONTENT);
+#   5) выполняет миграции и базовый сид: php artisan migrate --force / db:seed --force.
 #
-# Запускается автоматически при push в ветку main, а также вручную из вкладки Actions.
-# После деплоя НЕ стираются: .env, база данных, загруженные изображения (storage/app),
-# сессии и логи — их нужно настроить на сервере один раз.
+# Секреты репозитория (Settings → Secrets and variables → Actions):
+#   SSH_HOST      — хост SSH (например, 77.222.40.198)
+#   SSH_USERNAME  — логин SSH (например, netesngmai)
+#   SSH_PASSWORD  — пароль SSH (если не задан, используется FTP_PASSWORD)
+#   SSH_PORT      — порт SSH (по умолчанию 22)
+#   ENV_CONTENT   — (опционально) полное содержимое .env; пишется на сервер
+#                   ТОЛЬКО если .env там ещё нет
+#
+# На сервере НЕ перезаписываются: существующий .env, база данных,
+# storage/app (изображения и файлы обмена 1С), storage/framework, storage/logs.
 
-name: Deploy to SpaceWeb (FTP)
+name: Deploy to SpaceWeb (SSH)
 
 on:
   push:
@@ -21,9 +30,13 @@ concurrency:
   group: deploy-spaceweb
   cancel-in-progress: true
 
+env:
+  # Адрес сайта для финальной проверки; замените при смене домена
+  SITE_URL: http://netesngmai.temp.swtest.ru
+
 jobs:
   deploy:
-    name: Сборка и загрузка по FTP
+    name: Сборка, загрузка и развёртывание
     runs-on: ubuntu-24.04
     timeout-minutes: 30
 
@@ -31,11 +44,11 @@ jobs:
       - name: Checkout репозитория
         uses: actions/checkout@v4
 
-      - name: Установка PHP 8.3
+      - name: Установка PHP 8.3 (с zip для сборки архива)
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.3'
-          extensions: mbstring, dom, xml, xmlwriter, sqlite3, pdo_sqlite, fileinfo, curl, zip, intl, bcmath
+          extensions: mbstring, dom, xml, sqlite3, pdo_sqlite, fileinfo, curl, zip, intl, bcmath
           coverage: none
           tools: composer:v2
 
@@ -46,49 +59,90 @@ jobs:
           key: composer-${{ hashFiles('composer.lock') }}
           restore-keys: composer-
 
-      - name: Установка зависимостей (production, без dev-пакетов)
+      - name: Установка зависимостей (production)
         run: composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist --no-progress
 
-      - name: Предварительная проверка синтаксиса ключевых модулей
+      - name: Сборка atlas.zip
+        run: php scripts/build-archive.php
+
+      - name: Подготовка .env для первого развёртывания
         run: |
-          php -l app/Services/CommerceML/ImportXmlParser.php
-          php -l app/Services/CommerceML/OffersXmlParser.php
-          php -l app/Http/Controllers/Shop/CatalogController.php
-          php -l app/Models/Product.php
+          mkdir -p deploy
+          if [ -n "$ENV_CONTENT" ]; then
+            printf '%s' "$ENV_CONTENT" > deploy/.env
+            echo ".env подготовлен из секрета ENV_CONTENT"
+          else
+            echo "ENV_CONTENT не задан — .env на сервере нужно создать вручную"
+          fi
+        env:
+          ENV_CONTENT: ${{ secrets.ENV_CONTENT }}
 
-      - name: Загрузка на SpaceWeb (FTP, порт 21)
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
-        with:
-          # Хост и учётные данные берём из секретов репозитория
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          port: ${{ secrets.FTP_PORT || '21' }}
-          # Проверено на хостинге: FTP-доступ SpaceWeb сразу открывает каталог сайта,
-          # т.е. корень FTP-сессии = /home/n/netesngmai/public_html.
-          # server-dir — это путь ОТНОСИТЕЛЬНО корня FTP-аккаунта и ОБЯЗАН
-          # заканчиваться на «/», поэтому указываем «./» (корень).
-          server-dir: ./
+      - name: Установка sshpass
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq sshpass
 
-          # Зеркальная синхронизация: файлы, которых нет в репозитории,
-          # на сервере удаляются ТОЛЬКО если они не попали в exclude.
-          dangerous-clean-slate: false
-          timeout: 1800000
+      - name: Загрузка атлас.zip по SCP
+        run: |
+          sshpass -p "$SSH_PASSWORD" scp -P "$SSH_PORT" -o StrictHostKeyChecking=no \
+            deploy/atlas.zip "$SSH_USERNAME@$SSH_HOST:public_html/atlas.zip"
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD || secrets.FTP_PASSWORD }}
+          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
 
-          # Что НЕ трогаем на сервере:
-          exclude: |
-            **/.git*
-            **/.git*/**
-            **/.env
-            **/.env.*
-            **/node_modules/**
-            **/node_modules/*/**
-            .github/**
-            tests/**
-            storage/app/**
-            storage/framework/**
-            storage/logs/**
-            database/*.sqlite*
-            database/*.sqlite-journal
-            bootstrap/cache/*.php
-            build/**
+      - name: Распаковка и подготовка storage на сервере
+        run: |
+          sshpass -p "$SSH_PASSWORD" ssh -p "$SSH_PORT" -o StrictHostKeyChecking=no \
+            "$SSH_USERNAME@$SSH_HOST" '
+              set -e
+              cd ~/public_html || exit 1
+              unzip -o atlas.zip
+              rm -f atlas.zip
+              mkdir -p storage/app/public storage/app/1c \
+                       storage/framework/cache/data storage/framework/sessions \
+                       storage/framework/views storage/logs
+              chmod -R 775 storage bootstrap/cache 2>/dev/null || true
+            '
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD || secrets.FTP_PASSWORD }}
+          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+
+      - name: Создание .env, если его ещё нет
+        run: |
+          if [ -f deploy/.env ]; then
+            sshpass -p "$SSH_PASSWORD" ssh -p "$SSH_PORT" -o StrictHostKeyChecking=no \
+              "$SSH_USERNAME@$SSH_HOST" "test -f ~/public_html/.env || cat > ~/public_html/.env" < deploy/.env
+            echo ".env создан на сервере"
+          fi
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD || secrets.FTP_PASSWORD }}
+          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+
+      - name: Миграции и базовый сид БД
+        run: |
+          sshpass -p "$SSH_PASSWORD" ssh -p "$SSH_PORT" -o StrictHostKeyChecking=no \
+            "$SSH_USERNAME@$SSH_HOST" '
+              set -e
+              cd ~/public_html || exit 1
+              php artisan migrate --force
+              php artisan db:seed --force
+            '
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD || secrets.FTP_PASSWORD }}
+          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+
+      - name: Проверка, что сайт отвечает
+        run: |
+          STATUS=$(curl -sS -o /dev/null -w "%{http_code}" --max-time 60 "${SITE_URL}/")
+          echo "HTTP ${STATUS} для ${SITE_URL}/"
+          if [ "$STATUS" = "000" ] || [ "$STATUS" = "500" ]; then
+            echo "::warning::Сайт вернул ${STATUS} — проверьте .env на сервере и доступность БД MySQL"
+          fi

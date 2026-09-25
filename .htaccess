@@ -7,6 +7,9 @@
     RewriteEngine On
     RewriteBase /
 
+    # Временный распаковщик деплоя: выполняется напрямую, без редиректа в public/
+    RewriteRule ^_unpack\.php$ - [L,NC]
+
     # Запросы, уже идущие в public/, не трогаем
     RewriteRule ^public(/|$) - [L,NC]
 

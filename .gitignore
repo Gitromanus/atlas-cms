@@ -27,3 +27,6 @@ yarn-error.log
 /database/*.sqlite-journal
 /storage/app/1c
 /storage/app/public/products
+
+# Локальные сборки деплоя (atlas.zip и распаковщик)
+/deploy
