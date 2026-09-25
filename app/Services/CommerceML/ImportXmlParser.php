@@ -45,7 +45,7 @@ class ImportXmlParser
             $this->importGroups($classifier, null);
 
             // Карта свойств: Ид → Наименование (для значений характеристик товаров)
-            // и вариантные свойства: Ид → список допустимых значений (ВариантыЗначений)
+            // и вариантные свойства: Ид → ['values' => [идЗначения => имя], 'names' => [список имён]]
             $properties = [];
             $variantProperties = [];
             if (isset($classifier->Свойства)) {
@@ -58,16 +58,28 @@ class ImportXmlParser
                     $properties[$id] = XmlUtils::child($property, 'Наименование') ?? $id;
 
                     if (isset($property->ВариантыЗначений->ВариантЗначения)) {
-                        $options = [];
+                        $values = [];
+                        $names = [];
                         foreach ($property->ВариантыЗначений->ВариантЗначения as $option) {
+                            $optionId = XmlUtils::child($option, 'Ид');
                             $value = XmlUtils::child($option, 'Значение');
-                            if ($value !== null && $value !== '') {
-                                $options[] = $value;
+
+                            if ($value === null || $value === '') {
+                                continue;
                             }
+
+                            if ($optionId !== null) {
+                                $values[$optionId] = $value;
+                            }
+
+                            $names[] = $value;
                         }
 
-                        if ($options !== []) {
-                            $variantProperties[$id] = $options;
+                        if ($names !== []) {
+                            $variantProperties[$id] = [
+                                'values' => $values,
+                                'names' => $names,
+                            ];
                         }
                     }
                 }
@@ -162,6 +174,7 @@ class ImportXmlParser
     {
         $features = [];
 
+        // Свойства из ЗначенияСвойств (значения могут прийти GUID-ами ВариантыЗначений)
         if (isset($item->ЗначенияСвойств->ЗначенияСвойства)) {
             foreach ($item->ЗначенияСвойств->ЗначенияСвойства as $value) {
                 $propId = XmlUtils::child($value, 'Ид');
@@ -171,13 +184,48 @@ class ImportXmlParser
                     continue;
                 }
 
-                $isVariant = array_key_exists($propId, $variantProperties);
+                $isVariant = isset($variantProperties[$propId]);
+                $resolvedValue = $valueText;
+
+                if ($isVariant) {
+                    $valueId = XmlUtils::child($value, 'ИдЗначения') ?? $valueText;
+                    $values = $variantProperties[$propId]['values'] ?? [];
+                    $names = $variantProperties[$propId]['names'] ?? [];
+
+                    $resolvedValue = $values[$valueId]
+                        ?? $values[$valueText]
+                        ?? (in_array($valueText, $names, true) ? $valueText : $valueText);
+                }
 
                 $features[] = [
                     'name' => $propertiesMap[$propId] ?? $propId,
-                    'value' => $valueText,
+                    'value' => $resolvedValue,
                     'is_variant' => $isVariant,
-                    'options' => $isVariant ? $variantProperties[$propId] : null,
+                    'options' => $isVariant ? ($variantProperties[$propId]['names'] ?? null) : null,
+                ];
+            }
+        }
+
+        // Характеристики товара (цвет, размер и т.п.) — вариантные свойства для выбора на витрине
+        if (isset($item->ХарактеристикиТовара->Характеристика)) {
+            foreach ($item->ХарактеристикиТовара->Характеристика as $char) {
+                $name = XmlUtils::child($char, 'Наименование') ?? 'Характеристика';
+
+                $names = [];
+                if (isset($char->Значения->Значение)) {
+                    foreach ($char->Значения->Значение as $charValue) {
+                        $v = XmlUtils::child($charValue, 'Значение');
+                        if ($v !== null && $v !== '' && ! in_array($v, $names, true)) {
+                            $names[] = $v;
+                        }
+                    }
+                }
+
+                $features[] = [
+                    'name' => $name,
+                    'value' => $names[0] ?? '',
+                    'is_variant' => true,
+                    'options' => $names,
                 ];
             }
         }

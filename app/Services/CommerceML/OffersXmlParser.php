@@ -74,6 +74,15 @@ class OffersXmlParser
                     );
                 }
             }
+
+            // При выгрузке «только наличие» склады могут не передаваться —
+            // создаём склад по умолчанию, чтобы остатки было куда записывать.
+            if (Warehouse::query()->where('tenant_id', $tenantId)->doesntExist()) {
+                Warehouse::query()->create([
+                    'tenant_id' => $tenantId,
+                    'name' => 'Основной склад',
+                ]);
+            }
         });
     }
 
@@ -100,6 +109,30 @@ class OffersXmlParser
         }
 
         $product = Product::query()->where('ext_id', $extId)->first();
+
+        // У товаров с характеристиками Ид предложения может отличаться от Ид товара.
+        // Пробуем сопоставить по артикулу или уникальному наименованию.
+        if ($product === null) {
+            $tenantId = app(TenantContext::class)->id();
+
+            $sku = XmlUtils::child($offer, 'Артикул');
+            if ($sku !== null && $sku !== '') {
+                $product = Product::query()
+                    ->where('tenant_id', $tenantId)
+                    ->where('sku', $sku)
+                    ->first();
+            }
+
+            if ($product === null) {
+                $name = XmlUtils::child($offer, 'Наименование');
+                if ($name !== null && $name !== '') {
+                    $product = Product::query()
+                        ->where('tenant_id', $tenantId)
+                        ->where('name', $name)
+                        ->first();
+                }
+            }
+        }
 
         if ($product === null) {
             return;
@@ -131,35 +164,44 @@ class OffersXmlParser
             );
         }
 
-        // Общий остаток (атрибут Количество)
+        // Общий остаток (атрибут Количество предложения)
         $quantityTotal = (float) (XmlUtils::child($offer, 'Количество') ?? 0);
 
-        // Остатки по складам
+        // Остатки по складам: 1С может класть их в Склады или Остатки предложения
         $warehouses = Warehouse::query()
             ->where('tenant_id', $tenantId)
             ->pluck('id', 'ext_id');
 
-        $stockIds = [];
-        if (isset($offer->Склады->Склад)) {
-            foreach ($offer->Склады->Склад as $stock) {
-                $warehouseExtId = XmlUtils::child($stock, 'Ид');
-                $quantity = (float) (XmlUtils::child($stock, 'Количество') ?? 0);
+        $stockRows = [];
 
-                if ($warehouseExtId === null || ! isset($warehouses[$warehouseExtId])) {
-                    continue;
+        foreach (['Склады', 'Остатки'] as $container) {
+            if (isset($offer->{$container}->Склад)) {
+                foreach ($offer->{$container}->Склад as $stock) {
+                    $warehouseExtId = XmlUtils::child($stock, 'Ид');
+                    $quantity = (float) (XmlUtils::child($stock, 'Количество') ?? 0);
+
+                    if ($warehouseExtId === null || ! isset($warehouses[$warehouseExtId])) {
+                        continue;
+                    }
+
+                    $stockRows[$warehouses[$warehouseExtId]] = $quantity;
                 }
+            }
 
-                ProductStock::query()->updateOrCreate(
-                    ['product_id' => $product->id, 'warehouse_id' => $warehouses[$warehouseExtId]],
-                    ['tenant_id' => $tenantId, 'quantity' => $quantity]
-                );
-
-                $stockIds[] = $warehouses[$warehouseExtId];
+            if ($stockRows !== []) {
+                break;
             }
         }
 
-        // Если склады не указаны — единый остаток на первом складе магазина
-        if (empty($stockIds)) {
+        foreach ($stockRows as $warehouseId => $quantity) {
+            ProductStock::query()->updateOrCreate(
+                ['product_id' => $product->id, 'warehouse_id' => $warehouseId],
+                ['tenant_id' => $tenantId, 'quantity' => $quantity]
+            );
+        }
+
+        // Если остатки по складам не указаны — единый остаток на первом складе магазина
+        if ($stockRows === []) {
             $warehouseId = $warehouses->first();
 
             if ($warehouseId !== null) {
