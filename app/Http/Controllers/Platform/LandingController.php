@@ -3,25 +3,18 @@
 namespace App\Http\Controllers\Platform;
 
 use App\Http\Controllers\Controller;
-use App\Http\Controllers\Shop\HomeController;
-use App\Services\Tenant\TenantContext;
 use Illuminate\View\View;
 
 /**
- * Главная страница платформы.
+ * Главная страница платформы (лендинг SaaS).
  *
- * На поддомене магазина (тенант определён) — витрина магазина.
- * На основном домене — лендинг SaaS-платформы с описанием
- * и кнопкой создания магазина.
+ * Витрина магазина открывается по path /{slug}/ — отдельный маршрут home.
+ * Поддомены на бесплатном shared-хостинге не используются.
  */
 class LandingController extends Controller
 {
     public function index(): View
     {
-        if (app(TenantContext::class)->has()) {
-            return app(HomeController::class)->index();
-        }
-
         return view('platform.landing');
     }
 }
