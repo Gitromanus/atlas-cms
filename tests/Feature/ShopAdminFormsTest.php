@@ -178,5 +178,16 @@ class ShopAdminFormsTest extends TestCase
             ->set('tableSearch', 'OIL-5W40')
             ->assertCanSeeTableRecords([$second])
             ->assertCanNotSeeTableRecords([$first]);
+
+        // Регистронезависимый поиск: другой регистр запроса тоже находит
+        Livewire::test(ListProducts::class)
+            ->set('tableSearch', 'аком')
+            ->assertCanSeeTableRecords([$first])
+            ->assertCanNotSeeTableRecords([$second]);
+
+        Livewire::test(ListProducts::class)
+            ->set('tableSearch', 'oil-5w40')
+            ->assertCanSeeTableRecords([$second])
+            ->assertCanNotSeeTableRecords([$first]);
     }
 }

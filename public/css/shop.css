@@ -31,3 +31,44 @@ a {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* Тонкая полоса прокрутки для горизонтальных рядов (миниатюры, чипы) */
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgb(148 163 184 / 0.5);
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Единый аккуратный фокус для интерактивных элементов */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Пагинация: активная страница выделяется фирменным цветом */
+.pagination .page-item.active .page-link,
+.pagination [aria-current="page"] {
+  background: var(--color-primary) !important;
+  border-color: var(--color-primary) !important;
+  color: #fff !important;
+}
+
+/* Плавные появления блоков */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+main > section,
+main > div {
+  animation: fade-up 0.25s ease-out;
+}

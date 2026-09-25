@@ -43,6 +43,10 @@ class Product extends Model
             if (blank($model->slug) && $model->name) {
                 $model->slug = $model->uniqueSlug();
             }
+
+            // Регистронезависимый поиск: дубликат «название + артикул» в нижнем регистре
+            // (SQLite LOWER() не работает с кириллицей, поэтому нормализуем в PHP)
+            $model->search_name = mb_strtolower(trim(($model->name ?? '').' '.($model->sku ?? '')));
         });
     }
 

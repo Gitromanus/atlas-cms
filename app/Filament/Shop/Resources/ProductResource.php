@@ -219,12 +219,22 @@ class ProductResource extends Resource
                     ->size(40),
                 Tables\Columns\TextColumn::make('name')
                     ->label('Название')
-                    ->searchable()
+                    // Регистронезависимый поиск: по нормализованной колонке search_name
+                    // (name+sku в нижнем регистре; SQLite LOWER() не понимает кириллицу)
+                    ->searchable(
+                        'search_name',
+                        query: fn (\Illuminate\Database\Eloquent\Builder $query, string $search): \Illuminate\Database\Eloquent\Builder
+                            => $query->where('search_name', 'like', '%'.mb_strtolower($search).'%'),
+                    )
                     ->sortable()
                     ->limit(40),
                 Tables\Columns\TextColumn::make('sku')
                     ->label('Артикул')
-                    ->searchable(),
+                    ->searchable(
+                        'search_name',
+                        query: fn (\Illuminate\Database\Eloquent\Builder $query, string $search): \Illuminate\Database\Eloquent\Builder
+                            => $query->where('search_name', 'like', '%'.mb_strtolower($search).'%'),
+                    ),
                 Tables\Columns\TextColumn::make('price')
                     ->label('Цена')
                     // Для товаров с вариантами — диапазон цен вариантов, иначе обычная цена
@@ -243,6 +253,24 @@ class ProductResource extends Resource
                             : null;
                     })
                     ->placeholder('—'),
+                Tables\Columns\TextColumn::make('variants_list')
+                    ->label('Варианты')
+                    // Все реальные комбинации: «Красный / M — 1500 ₽ — 4 шт», каждая с новой строки
+                    ->state(function (Product $record): ?string {
+                        if ($record->variants->isEmpty()) {
+                            return null;
+                        }
+
+                        return $record->variants
+                            ->map(fn ($variant): string => collect($variant->options ?? [])->implode(' / ')
+                                .' — '.number_format((float) $variant->price, 0, ',', ' ').' ₽'
+                                .' — '.number_format((float) $variant->quantity, 0, ',', ' ').' шт')
+                            ->implode("\n");
+                    })
+                    ->formatStateUsing(fn (?string $state): ?string => filled($state) ? trim($state) : null)
+                    ->wrap()
+                    ->placeholder('—')
+                    ->extraAttributes(['class' => 'whitespace-pre-line text-xs leading-5']),
                 Tables\Columns\TextColumn::make('stockTotal')
                     ->label('Остаток')
                     // У товаров с вариантами остаток считается по вариантам

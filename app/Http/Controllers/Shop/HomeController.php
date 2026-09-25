@@ -18,6 +18,9 @@ class HomeController extends Controller
             ->limit(8)
             ->get();
 
-        return view('shop.home', compact('products'));
+        return view('shop.home', [
+            'products' => $products,
+            'categories' => collect(\App\Models\Category::menuTree()),
+        ]);
     }
 }
