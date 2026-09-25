@@ -7,7 +7,8 @@
 
 В репозитории есть workflow [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml):
 при push в `main` он собирает `vendor` и загружает проект по FTP в
-`/home/n/netesngmai/public_html/` (порт 21).
+`public_html/` (для SpaceWeb это путь **относительно корня FTP-аккаунта**, который
+соответствует домашнему каталогу `/home/n/netesngmai`; порт 21).
 
 Секреты репозитория: `FTP_SERVER`, `FTP_USERNAME`, `FTP_PASSWORD`, `FTP_PORT` (опционально).
 
