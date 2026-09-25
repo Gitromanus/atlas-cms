@@ -15,7 +15,7 @@ class CreateProduct extends CreateRecord
     protected function mutateFormDataBeforeCreate(array $data): array
     {
         $this->pendingImages = is_array($data['new_images'] ?? null) ? $data['new_images'] : [];
-        unset($data['new_images'], $data['existing_hint']);
+        unset($data['new_images']);
 
         return $data;
     }

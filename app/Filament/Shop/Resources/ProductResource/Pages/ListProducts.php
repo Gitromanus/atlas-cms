@@ -18,14 +18,9 @@ class ListProducts extends ListRecords
                 ->url(null)
                 ->modal()
                 ->slideOver()
-                ->using(function (array $data): Product {
-                    $paths = $data['new_images'] ?? [];
-                    unset($data['new_images'], $data['existing_hint']);
-
-                    $record = Product::query()->create($data);
-                    ProductResource::storeNewImages($record, is_array($paths) ? $paths : []);
-
-                    return $record;
+                ->mutateFormDataUsing(fn (array $data): array => ProductResource::stashPendingImages($data))
+                ->after(function (Product $record): void {
+                    ProductResource::storeNewImages($record, ProductResource::takePendingImages());
                 }),
         ];
     }

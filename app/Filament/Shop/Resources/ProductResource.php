@@ -8,6 +8,7 @@ use App\Models\ProductImage;
 use App\Services\Tenant\TenantContext;
 use Filament\Forms;
 use Filament\Forms\Form;
+use Filament\Forms\Get;
 use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
@@ -25,6 +26,9 @@ class ProductResource extends Resource
 
     protected static ?string $pluralModelLabel = 'товары';
 
+    /** @var array<int, string> */
+    protected static array $pendingNewImages = [];
+
     public static function form(Form $form): Form
     {
         return $form
@@ -32,39 +36,54 @@ class ProductResource extends Resource
                 Forms\Components\Grid::make(['default' => 1, 'md' => 3])
                     ->schema([
                         Forms\Components\Section::make('Изображения')
-                            ->description('Загрузите файлы и нажмите Сохранить.')
+                            ->description('Первое по порядку — основное (крупно на сайте). Стрелки = порядок, крестик = удалить.')
                             ->schema([
-                                Forms\Components\Placeholder::make('existing_hint')
-                                    ->label('Уже загружено')
-                                    ->content(function ($record = null): HtmlString {
-                                        if (! $record instanceof Product) {
-                                            return new HtmlString('<p class="text-sm text-gray-500">—</p>');
-                                        }
+                                Forms\Components\Repeater::make('images')
+                                    ->relationship()
+                                    ->label('Текущие фото')
+                                    ->schema([
+                                        Forms\Components\Placeholder::make('preview')
+                                            ->label('Превью')
+                                            ->content(function (Get $get): HtmlString {
+                                                $url = $get('url');
+                                                $path = $get('path');
+                                                if (filled($path) && ! filled($url)) {
+                                                    $relative = str_starts_with((string) $path, 'products/')
+                                                        ? $path
+                                                        : 'products/'.$path;
+                                                    $url = asset('storage/'.$relative);
+                                                }
+                                                if (! filled($url)) {
+                                                    return new HtmlString('<span class="text-sm text-gray-400">нет файла</span>');
+                                                }
 
-                                        $imgs = $record->images()->orderBy('sort_order')->orderBy('id')->get();
-                                        if ($imgs->isEmpty()) {
-                                            return new HtmlString('<p class="text-sm text-gray-500">Пока нет фото.</p>');
-                                        }
-
-                                        $html = '<div class="flex flex-wrap gap-2">';
-                                        foreach ($imgs as $i => $img) {
-                                            $src = e((string) ($img->url ?? ''));
-                                            if ($src === '') {
-                                                continue;
-                                            }
-                                            $html .= '<div class="relative">';
-                                            $html .= '<img src="'.$src.'" class="h-16 w-16 rounded object-cover" alt="" />';
-                                            if ($i === 0) {
-                                                $html .= '<span class="absolute left-0 top-0 rounded bg-primary-600 px-1 text-[10px] text-white">★</span>';
-                                            }
-                                            $html .= '</div>';
-                                        }
-                                        $html .= '</div>';
-
-                                        return new HtmlString($html);
-                                    }),
+                                                return new HtmlString(
+                                                    '<img src="'.e((string) $url).'" class="h-24 w-24 rounded object-cover ring-1 ring-gray-200" alt="" />'
+                                                );
+                                            }),
+                                        Forms\Components\TextInput::make('sort_order')
+                                            ->label('Порядок')
+                                            ->numeric()
+                                            ->default(0)
+                                            ->helperText('0 = основное'),
+                                        Forms\Components\Hidden::make('path')->dehydrated(true),
+                                        Forms\Components\Hidden::make('url')->dehydrated(true),
+                                        Forms\Components\Hidden::make('source')->dehydrated(true),
+                                        Forms\Components\Hidden::make('tenant_id')->dehydrated(true),
+                                    ])
+                                    ->orderColumn('sort_order')
+                                    ->reorderable()
+                                    ->reorderableWithButtons()
+                                    ->collapsible()
+                                    ->itemLabel(function (array $state): ?string {
+                                        return 'Фото · порядок '.($state['sort_order'] ?? '0');
+                                    })
+                                    ->defaultItems(0)
+                                    ->addable(false)
+                                    ->deletable()
+                                    ->columns(1),
                                 Forms\Components\FileUpload::make('new_images')
-                                    ->label('Добавить фото')
+                                    ->label('Добавить новые фото')
                                     ->disk('public')
                                     ->directory(fn (): string => 'products/'.self::tenantSlug().'/'.now()->format('Y/m'))
                                     ->visibility('public')
@@ -168,6 +187,22 @@ class ProductResource extends Resource
         return $created;
     }
 
+    public static function takePendingImages(): array
+    {
+        $paths = self::$pendingNewImages;
+        self::$pendingNewImages = [];
+
+        return $paths;
+    }
+
+    public static function stashPendingImages(array $data): array
+    {
+        self::$pendingNewImages = is_array($data['new_images'] ?? null) ? $data['new_images'] : [];
+        unset($data['new_images']);
+
+        return $data;
+    }
+
     protected static function tenantSlug(): string
     {
         return app(TenantContext::class)->current()?->slug ?? 'common';
@@ -214,15 +249,9 @@ class ProductResource extends Resource
                     ->url(null)
                     ->modal()
                     ->slideOver()
-                    ->using(function (Product $record, array $data): Product {
-                        $paths = $data['new_images'] ?? [];
-                        unset($data['new_images'], $data['existing_hint']);
-
-                        $record->update($data);
-
-                        self::storeNewImages($record, is_array($paths) ? $paths : []);
-
-                        return $record->refresh()->load('images');
+                    ->mutateFormDataUsing(fn (array $data): array => self::stashPendingImages($data))
+                    ->after(function (Product $record): void {
+                        self::storeNewImages($record, self::takePendingImages());
                     }),
                 Tables\Actions\DeleteAction::make(),
             ])

@@ -3,18 +3,54 @@
 @section('title', $product->name)
 
 @section('content')
+    @php
+        $gallery = $product->images->sortBy([['sort_order', 'asc'], ['id', 'asc']])->values();
+        $main = $gallery->first();
+    @endphp
     <div class="grid gap-8 md:grid-cols-2">
-        <div class="overflow-hidden rounded-theme bg-white shadow-sm">
-            @php $img = $product->images->sortBy('sort_order')->first(); @endphp
-            @if ($img?->url)
-                <img src="{{ $img->url }}" alt="{{ $product->name }}" class="aspect-square w-full object-cover">
-            @else
-                <div class="flex aspect-square items-center justify-center bg-slate-100 text-6xl text-slate-300">🛍️</div>
+        <div>
+            <div class="overflow-hidden rounded-theme bg-white shadow-sm">
+                @if ($main?->url)
+                    <img id="product-main-image"
+                         src="{{ $main->url }}"
+                         alt="{{ $product->name }}"
+                         class="aspect-square w-full object-cover">
+                @else
+                    <div class="flex aspect-square items-center justify-center bg-slate-100 text-6xl text-slate-300">🛍️</div>
+                @endif
+            </div>
+            @if ($gallery->count() > 1)
+                <div class="mt-3 flex flex-wrap gap-2">
+                    @foreach ($gallery as $img)
+                        @continue(! $img->url)
+                        <button type="button"
+                                class="product-thumb overflow-hidden rounded-lg ring-1 ring-slate-200 hover:ring-primary focus:outline-none focus:ring-2 focus:ring-primary"
+                                data-src="{{ $img->url }}"
+                                aria-label="Фото {{ $loop->iteration }}">
+                            <img src="{{ $img->url }}" alt="" class="h-16 w-16 object-cover">
+                        </button>
+                    @endforeach
+                </div>
+                <script>
+                    document.querySelectorAll('.product-thumb').forEach(function (btn) {
+                        btn.addEventListener('click', function () {
+                            var main = document.getElementById('product-main-image');
+                            if (main && btn.dataset.src) {
+                                main.src = btn.dataset.src;
+                            }
+                        });
+                    });
+                </script>
             @endif
         </div>
         <div>
             <nav class="mb-2 text-sm text-slate-500">
                 <a href="{{ route('catalog.index') }}" class="hover:text-primary">Каталог</a>
+                @if ($product->category)
+                    <span class="mx-1">/</span>
+                    <a href="{{ route('catalog.category', ['categorySlug' => $product->category->slug ?: $product->category->id]) }}"
+                       class="hover:text-primary">{{ $product->category->name }}</a>
+                @endif
             </nav>
             <h1 class="text-3xl font-bold">{{ $product->name }}</h1>
             @if ($product->sku)
