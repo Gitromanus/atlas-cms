@@ -177,7 +177,7 @@ class ShopFlowTest extends TestCase
         $this->assertDatabaseHas('customers', [
             'tenant_id' => $tenant->id,
             'email' => 'guest@example.com',
-            'phone' => '+7 900 111-22-33',
+            'phone' => '79001112233', // телефон нормализуется до цифр
         ]);
 
         // Повторный заказ тем же email — покупатель не дублируется
@@ -239,5 +239,15 @@ class ShopFlowTest extends TestCase
         $customer = Customer::query()->where('email', 'maria@example.com')->first();
         $this->assertNotNull($customer);
         $this->assertSame($tenant->id, $customer->tenant_id);
+        $this->assertSame('79111111111', $customer->phone, 'Телефон нормализуется при регистрации');
+
+        // Повторная регистрация того же пользователя отклоняется, а не падает с 500
+        $this->post('http://demo.atlascms.ru/register', [
+            'name' => 'Мария Дубль',
+            'phone' => '+7 911 111-11-11',
+            'email' => 'maria@example.com',
+            'password' => 'secret123',
+            'password_confirmation' => 'secret123',
+        ])->assertSessionHasErrors('email');
     }
 }

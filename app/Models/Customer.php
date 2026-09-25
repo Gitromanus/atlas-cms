@@ -36,4 +36,24 @@ class Customer extends Authenticatable
     {
         return $this->hasMany(Order::class);
     }
+
+    /**
+     * Нормализует email: нижний регистр, без пробелов.
+     */
+    public static function normalizeEmail(?string $email): ?string
+    {
+        $email = mb_strtolower(trim((string) $email));
+
+        return $email !== '' ? $email : null;
+    }
+
+    /**
+     * Нормализует телефон: только цифры (для поиска и уникальности).
+     */
+    public static function normalizePhone(?string $phone): ?string
+    {
+        $phone = preg_replace('/\D+/', '', (string) $phone);
+
+        return $phone !== '' ? $phone : null;
+    }
 }

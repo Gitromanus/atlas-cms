@@ -27,8 +27,11 @@ class AuthController extends Controller
         ]);
 
         $field = filter_var($validated['login'], FILTER_VALIDATE_EMAIL) ? 'email' : 'phone';
+        $credentials = $field === 'email'
+            ? Customer::normalizeEmail($validated['login'])
+            : Customer::normalizePhone($validated['login']);
 
-        if (! Auth::guard('customers')->attempt([$field => $validated['login'], 'password' => $validated['password']], $request->boolean('remember'))) {
+        if ($credentials === null || ! Auth::guard('customers')->attempt([$field => $credentials, 'password' => $validated['password']], $request->boolean('remember'))) {
             return back()->withErrors(['login' => 'Неверный логин или пароль'])->onlyInput('login');
         }
 
@@ -55,10 +58,26 @@ class AuthController extends Controller
             'password' => ['required', 'string', 'min:6', 'confirmed'],
         ]);
 
+        $email = Customer::normalizeEmail($validated['email'] ?? null);
+        $phone = Customer::normalizePhone($validated['phone']);
+
+        // Профиль мог появиться после заказа гостем — не даём 500 по unique-индексу,
+        // а предлагаем войти или восстановить пароль
+        $exists = Customer::query()
+            ->when($email !== null, fn ($query) => $query->orWhere('email', $email))
+            ->when($phone !== null, fn ($query) => $query->orWhere('phone', $phone))
+            ->exists();
+
+        if ($exists) {
+            return back()
+                ->withErrors(['email' => 'Покупатель с таким email или телефоном уже зарегистрирован. Войдите в личный кабинет или восстановите пароль.'])
+                ->onlyInput('name', 'email', 'phone');
+        }
+
         $customer = Customer::create([
-            'name' => $validated['name'],
-            'email' => $validated['email'] ?? null,
-            'phone' => $validated['phone'],
+            'name' => trim((string) $validated['name']) ?: 'Покупатель',
+            'email' => $email,
+            'phone' => $phone,
             'password' => $validated['password'],
         ]);
 

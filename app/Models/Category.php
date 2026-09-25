@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Concerns\BelongsToTenant;
 use App\Services\Tenant\TenantContext;
 use App\Support\Slugger;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -96,31 +97,44 @@ class Category extends Model
         $categories = static::query()
             ->where('tenant_id', $tenantId)
             ->where('is_active', true)
-            ->withCount('products')
+            // Считаем только товары, видимые на витрине (активные и не удалённые из 1С)
+            ->withCount(['products' => fn ($query) => $query->active()])
             ->orderBy('sort_order')
             ->orderBy('id')
             ->get();
 
         $byId = $categories->keyBy('id');
 
-        // Заранее инициализируем пустые коллекции детей, чтобы обращение
+        // Заранее инициализируем пустые Eloquent-коллекции детей, чтобы обращение
         // ->children в цикле не выполняло отдельный SQL-запрос (это приводило
         // к дублированию категорий в подменю).
         foreach ($categories as $category) {
-            $category->setRelation('children', collect());
+            $category->setRelation('children', new EloquentCollection());
         }
 
         $roots = [];
+        $attached = [];
 
         foreach ($categories as $category) {
+            // Защита от циклических parent_id (A → B → A): узел участвует в дереве один раз
+            if (isset($attached[$category->id])) {
+                continue;
+            }
+
             if ($category->parent_id !== null && $byId->has($category->parent_id)) {
+                $attached[$category->id] = true;
                 $byId[$category->parent_id]->children->push($category);
             } else {
                 $roots[] = $category;
             }
         }
 
-        $countRecursive = function (self $node) use (&$countRecursive): int {
+        $countRecursive = function (self $node) use (&$countRecursive, &$visited): int {
+            if (isset($visited[$node->id])) {
+                return 0;
+            }
+            $visited[$node->id] = true;
+
             $total = (int) $node->products_count;
 
             foreach ($node->children as $child) {
@@ -131,6 +145,8 @@ class Category extends Model
 
             return $total;
         };
+
+        $visited = [];
 
         foreach ($roots as $root) {
             $countRecursive($root);

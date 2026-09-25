@@ -93,29 +93,35 @@ class OrderService
      */
     protected function findOrCreateCustomer(array $data): ?Customer
     {
-        $email = isset($data['email']) ? trim((string) $data['email']) : '';
-        $phone = isset($data['phone']) ? trim((string) $data['phone']) : '';
+        $email = Customer::normalizeEmail($data['email'] ?? null);
+        $phone = Customer::normalizePhone($data['phone'] ?? null);
 
-        if ($email === '' && $phone === '') {
+        if ($email === null && $phone === null) {
             return null;
         }
 
-        $customer = Customer::query()
-            ->where(fn ($query) => $query
-                ->when($email !== '', fn ($q) => $q->orWhere('email', $email))
-                ->when($phone !== '', fn ($q) => $q->orWhere('phone', $phone)))
+        $find = fn (): ?Customer => Customer::query()
+            ->when($email !== null, fn ($query) => $query->orWhere('email', $email))
+            ->when($phone !== null, fn ($query) => $query->orWhere('phone', $phone))
             ->first();
+
+        $customer = $find();
 
         if ($customer !== null) {
             return $customer;
         }
 
-        return Customer::create([
-            'name' => $data['name'] ?? 'Покупатель',
-            'email' => $email !== '' ? $email : null,
-            'phone' => $phone !== '' ? $phone : null,
-            'password' => (string) Str::uuid(),
-        ]);
+        try {
+            return Customer::create([
+                'name' => trim((string) ($data['name'] ?? 'Покупатель')) ?: 'Покупатель',
+                'email' => $email,
+                'phone' => $phone,
+                'password' => (string) Str::uuid(),
+            ]);
+        } catch (\Illuminate\Database\QueryException $e) {
+            // Гонка: профиль с таким email/телефоном создан параллельным запросом
+            return $find();
+        }
     }
 
     protected function nextNumber(): string

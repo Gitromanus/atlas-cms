@@ -54,7 +54,7 @@
 
             <a href="{{ route('cart.index') }}" class="relative hover:text-primary">
                 Корзина
-                @if (\App\Services\Cart\CartService::class && app()->bound(\App\Services\Cart\CartService::class))
+                @if (app()->bound(\App\Services\Cart\CartService::class))
                     @php($cartCount = app(\App\Services\Cart\CartService::class)->count())
                     @if ($cartCount > 0)
                         <span class="absolute -right-3 -top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-xs font-bold text-white">{{ $cartCount }}</span>

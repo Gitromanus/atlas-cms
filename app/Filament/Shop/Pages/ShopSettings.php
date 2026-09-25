@@ -71,7 +71,10 @@ class ShopSettings extends Page implements HasForms
                     ->schema([
                         Placeholder::make('exchange_log_link')
                             ->label('Журнал обмена')
-                            ->content(fn () => '<a href="'.url('/shop/exchange-logs').'" class="font-medium text-primary-600 hover:underline">Открыть журнал обмена →</a>'),
+                            // HtmlString — иначе Blade {{ }} экранирует разметку и ссылка покажется текстом
+                            ->content(fn () => new \Illuminate\Support\HtmlString(
+                                '<a href="'.url('/shop/exchange-logs').'" class="font-medium text-primary-600 hover:underline">Открыть журнал обмена →</a>'
+                            )),
                     ]),
             ])
             ->statePath('data');

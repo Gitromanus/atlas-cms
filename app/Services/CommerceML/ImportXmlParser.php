@@ -147,11 +147,11 @@ class ImportXmlParser
 
         $product = Product::query()->firstOrNew(['ext_id' => $extId]);
 
-        // Категория из выгрузки
+        // Категория из выгрузки (товар может быть в нескольких группах — берём первую найденную)
         $categoryId = null;
-        $groupId = XmlUtils::ids($item, 'Группы')[0] ?? null;
-        if ($groupId !== null) {
-            $categoryId = Category::query()->where('ext_id', $groupId)->value('id');
+        $groupIds = XmlUtils::ids($item, 'Группы');
+        if ($groupIds !== []) {
+            $categoryId = Category::query()->whereIn('ext_id', $groupIds)->value('id');
         }
 
         $product->fill([
