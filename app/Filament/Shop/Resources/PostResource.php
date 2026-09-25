@@ -4,6 +4,7 @@ namespace App\Filament\Shop\Resources;
 
 use App\Filament\Shop\Resources\PostResource\Pages;
 use App\Models\Post;
+use App\Services\Tenant\TenantContext;
 use App\Support\Slugger;
 use Filament\Forms;
 use Filament\Forms\Form;
@@ -24,11 +25,15 @@ class PostResource extends Resource
 
     protected static ?string $pluralModelLabel = 'материалы';
 
+    protected static ?string $recordTitleAttribute = 'title';
+
     protected static ?int $navigationSort = 40;
 
     public static function form(Form $form): Form
     {
         return $form->schema([
+            Forms\Components\Hidden::make('tenant_id')
+                ->default(fn () => app(TenantContext::class)->id()),
             Forms\Components\Section::make()
                 ->schema([
                     Forms\Components\Select::make('type')
@@ -44,36 +49,41 @@ class PostResource extends Resource
                         ->required()
                         ->maxLength(255)
                         ->live(onBlur: true)
-                        ->afterStateUpdated(fn (Set $set, ?string $state) => $set('slug', Slugger::slug((string) $state))),
+                        ->afterStateUpdated(function (Set $set, ?string $state): void {
+                            if (filled($state)) {
+                                $set('slug', Slugger::slug($state) ?: 'post-'.uniqid());
+                            }
+                        }),
                     Forms\Components\TextInput::make('slug')
-                        ->label('Slug')
+                        ->label('Slug (URL)')
                         ->required()
                         ->maxLength(255)
-                        ->alphaDash(),
+                        ->helperText('Латиница, цифры и дефисы'),
                     Forms\Components\Textarea::make('excerpt')
                         ->label('Краткое описание')
                         ->rows(2)
                         ->maxLength(500)
                         ->columnSpanFull(),
-                    Forms\Components\RichEditor::make('body')
+                    Forms\Components\Textarea::make('body')
                         ->label('Текст')
+                        ->rows(12)
                         ->columnSpanFull()
-                        ->toolbarButtons([
-                            'bold', 'italic', 'bulletList', 'orderedList', 'link', 'h2', 'h3', 'blockquote',
-                        ]),
+                        ->helperText('Можно использовать простой HTML: <p>, <b>, <ul>, <li>'),
                     Forms\Components\FileUpload::make('cover_path')
                         ->label('Обложка')
                         ->disk('public')
                         ->directory('posts')
                         ->image()
                         ->imagePreviewHeight('120')
-                        ->maxSize(4096),
+                        ->maxSize(4096)
+                        ->nullable(),
                     Forms\Components\Toggle::make('is_published')
                         ->label('Опубликовано')
                         ->default(false),
                     Forms\Components\DateTimePicker::make('published_at')
                         ->label('Дата публикации')
-                        ->seconds(false),
+                        ->seconds(false)
+                        ->nullable(),
                 ])
                 ->columns(2),
         ]);
