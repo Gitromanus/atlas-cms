@@ -45,25 +45,7 @@
     $phoneHref = $phone ? preg_replace('/[^\d+]/', '', $phone) : null;
 @endphp
 
-{{-- atlas-layout-v2 --}}
-@if (filled($phone) || filled($hours))
-    <div class="border-b border-slate-200 bg-white text-sm text-slate-600">
-        <div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-1.5">
-            <div class="flex flex-wrap items-center gap-4">
-                @if (filled($phone))
-                    <a href="tel:{{ $phoneHref }}" class="font-medium text-primary hover:underline">{{ $phone }}</a>
-                @endif
-                @if (filled($hours))
-                    <span class="text-slate-500">{{ $hours }}</span>
-                @endif
-            </div>
-            @if (filled($email))
-                <a href="mailto:{{ $email }}" class="hidden text-slate-500 hover:text-primary sm:inline">{{ $email }}</a>
-            @endif
-        </div>
-    </div>
-@endif
-
+{{-- atlas-layout-v3: no top bar --}}
 <header class="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
     <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
         <a href="{{ route('home') }}" class="flex shrink-0 items-center gap-2">
@@ -96,6 +78,9 @@
         </form>
 
         <div class="flex items-center gap-3">
+            @if (filled($phone))
+                <a href="tel:{{ $phoneHref }}" class="header-phone hidden text-sm font-medium text-slate-600 transition hover:text-primary sm:inline" title="Позвонить">{{ $phone }}</a>
+            @endif
             <a href="{{ route('catalog.index') }}" class="p-1.5 text-slate-600 transition hover:text-primary lg:hidden" title="Поиск / каталог">
                 <svg class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>
             </a>
