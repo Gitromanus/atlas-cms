@@ -19,16 +19,30 @@
             <p class="text-xs text-slate-400">Артикул: {{ $product->sku }}</p>
         @endif
 
-        @php($cardVariants = $product->variantFeatures()
-            ->filter(fn ($feature) => filled($feature->options))
-            ->take(2))
+        @php
+            // Только реальные комбинации из 1С: значения, которых нет в вариантах товара, не показываются
+            $cardCombos = $product->variants->filter(fn ($variant) => filled($variant->options));
+            $cardVariantValues = $product->variantFeatures()
+                ->filter(fn ($feature) => filled($feature->options))
+                ->map(function ($feature) use ($cardCombos) {
+                    $values = $cardCombos->pluck('options.'.$feature->name)
+                        ->filter()
+                        ->unique()
+                        ->sort()
+                        ->values();
 
-        @if ($cardVariants->isNotEmpty())
+                    return ['name' => $feature->name, 'values' => $values];
+                })
+                ->filter(fn ($item): bool => $item['values']->isNotEmpty())
+                ->take(2);
+        @endphp
+
+        @if ($cardVariantValues->isNotEmpty())
             <div class="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
-                @foreach ($cardVariants as $feature)
-                    <span title="{{ $feature->name }}: {{ implode(', ', $feature->options) }}">
-                        {{ $feature->name }}:
-                        <span class="font-medium text-slate-700">{{ collect($feature->options)->take(4)->implode(', ') }}</span>
+                @foreach ($cardVariantValues as $item)
+                    <span title="{{ $item['name'] }}: {{ $item['values']->implode(', ') }}">
+                        {{ $item['name'] }}:
+                        <span class="font-medium text-slate-700">{{ $item['values']->take(4)->implode(', ') }}</span>
                     </span>
                 @endforeach
             </div>

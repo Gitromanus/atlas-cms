@@ -20,9 +20,9 @@
         </nav>
     @endif
 
-    @if ($category !== null && filled($category->children ?? null) && $category->children->isNotEmpty())
+    @if ($categoryNode !== null && filled($categoryNode->children ?? null) && $categoryNode->children->isNotEmpty())
         <div class="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-            @foreach ($category->children as $child)
+            @foreach ($categoryNode->children as $child)
                 <a href="{{ route('catalog.category', $child->slug ?: $child->id) }}"
                    class="rounded-theme border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 transition hover:border-primary hover:bg-slate-50">
                     <span class="font-medium">{{ $child->name }}</span>

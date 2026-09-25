@@ -23,7 +23,25 @@ class CatalogController extends Controller
     protected function render(Request $request, ?Category $category): View
     {
         // Дерево категорий со счётчиками товаров (включая подкатегории)
-        $categories = collect(Category::menuTree());
+        $menuTree = Category::menuTree();
+        $categories = collect($menuTree);
+
+        // Узел текущей категории из дерева — с загруженными детьми и счётчиками
+        // (для плиток подкатегорий на странице категории)
+        $categoryNode = null;
+        if ($category !== null) {
+            $stack = collect($menuTree);
+            while ($stack->isNotEmpty()) {
+                $node = $stack->shift();
+
+                if ($node->id === $category->id) {
+                    $categoryNode = $node;
+                    break;
+                }
+
+                $stack = $stack->concat($node->children ?? collect());
+            }
+        }
 
         $products = Product::query()
             ->active()
@@ -48,6 +66,7 @@ class CatalogController extends Controller
             'categories' => $categories,
             'products' => $products,
             'category' => $category,
+            'categoryNode' => $categoryNode,
         ]);
     }
 }

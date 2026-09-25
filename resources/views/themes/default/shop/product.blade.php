@@ -54,10 +54,11 @@
                     ->map(fn ($v) => ['options' => $v->options, 'quantity' => (float) $v->quantity])
                     ->values();
 
-                // Списки значений строятся из реальных комбинаций, а не из перекрёстного произведения
+                // Списки значений строятся из реальных комбинаций, а не из перекрёстного произведения;
+                // значения сортируются по алфавиту для предсказуемого порядка
                 $variantSelects = [];
                 foreach ($product->variantFeatures() as $vf) {
-                    $values = $variantCombos->pluck('options.'.$vf->name)->filter()->unique()->values();
+                    $values = $variantCombos->pluck('options.'.$vf->name)->filter()->unique()->sort()->values();
                     if ($values->isNotEmpty()) {
                         $variantSelects[] = ['name' => $vf->name, 'options' => $values->all()];
                     }

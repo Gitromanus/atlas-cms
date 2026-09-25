@@ -31,26 +31,12 @@ class ProductResource extends Resource
                 Forms\Components\Grid::make(['default' => 1, 'md' => 3])
                     ->schema([
                         Forms\Components\Section::make('Изображения')
-                            ->description('Превью из 1С; новые файлы — кнопкой ниже')
+                            ->description('Основное фото и миниатюры; клик по миниатюре открывает её в предпросмотре')
                             ->schema([
-                                Forms\Components\Repeater::make('images')
-                                    ->relationship('images')
-                                    ->label('Изображения товара')
-                                    ->itemLabel(fn (array $state): ?string => filled($state['path'] ?? null)
-                                        ? basename((string) $state['path'])
-                                        : ($state['url'] ?? null))
-                                    ->schema([
-                                        Forms\Components\ViewField::make('preview')
-                                            ->view('filament.shop.product-image-preview')
-                                            ->dehydrated(false),
-                                        Forms\Components\TextInput::make('url')
-                                            ->label('Ссылка (из 1С)')
-                                            ->url()
-                                            ->placeholder('https://…'),
-                                    ])
-                                    ->defaultItems(0)
-                                    ->reorderableWithButtons()
-                                    ->collapsible(),
+                                // Компактная галерея: крупное фото + миниатюры (ссылки генерируются автоматически)
+                                Forms\Components\ViewField::make('images_gallery')
+                                    ->view('filament.shop.product-images-gallery')
+                                    ->dehydrated(false),
                                 Forms\Components\FileUpload::make('new_images')
                                     ->label('Добавить новые изображения')
                                     ->helperText('Файлы сохранятся вместе с товаром')
@@ -103,7 +89,8 @@ class ProductResource extends Resource
                         Forms\Components\ViewField::make('variants_preview')
                             ->view('filament.shop.product-variants')
                             ->dehydrated(false),
-                    ]),
+                    ])
+                    ->collapsible(),
                 Forms\Components\Section::make('Характеристики')
                     ->description('Перетаскивайте строки, чтобы задать порядок. Свойства с включённым «Вариантом» выбираются на витрине.')
                     ->schema([
@@ -124,13 +111,15 @@ class ProductResource extends Resource
                                     ->helperText('Выбор на витрине'),
                                 Forms\Components\TagsInput::make('options')
                                     ->label('Варианты значений')
-                                    ->placeholder('Добавить значение…'),
+                                    ->placeholder('Добавить значение…')
+                                    ->helperText('Перетаскивайте теги для ручного порядка; на витрине значения сортируются по алфавиту'),
                             ])
                             ->columns(2)
                             ->defaultItems(0)
                             ->reorderableWithButtons()
                             ->collapsible(),
-                    ]),
+                    ])
+                    ->collapsible(),
                 Forms\Components\Section::make('Цены и остатки')
                     ->description('Приходят из 1С; можно править вручную')
                     ->schema([

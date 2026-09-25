@@ -55,7 +55,7 @@ class CategoryResource extends Resource
                 Tables\Columns\TextColumn::make('name')
                     ->label('Название')
                     ->searchable()
-                    ->sortable()
+                    // Сортировка отключена: порядок задаётся перетаскиванием строк (reorderable)
                     // Дерево: подкатегории с отступами от уровня вложенности
                     ->formatStateUsing(function (string $state, Category $record): string {
                         if ($record->depth === 0) {

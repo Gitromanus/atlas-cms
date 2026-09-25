@@ -20,6 +20,13 @@ use SimpleXMLElement;
  */
 class ImportXmlParser
 {
+    /**
+     * Сквозной номер группы в порядке обхода классификатора (DFS):
+     * дочерние категории всегда идут сразу после родителя, что даёт
+     * иерархический порядок в админке при сортировке по sort_order.
+     */
+    protected int $groupSort = 0;
+
     public function __construct(protected ExchangeStore $store) {}
 
     public function import(string $filename): int
@@ -107,12 +114,15 @@ class ImportXmlParser
                 continue;
             }
 
+            $this->groupSort++;
+
             $category = Category::query()->firstOrNew(['ext_id' => $extId]);
             $category->fill([
                 'tenant_id' => app(TenantContext::class)->id(),
                 'parent_id' => $parent?->id,
                 'name' => $name,
                 'is_active' => true,
+                'sort_order' => $this->groupSort,
             ])->save();
 
             $this->importGroups($group, $category);
