@@ -46,9 +46,6 @@ class Category extends Model
         return $this->belongsTo(Category::class, 'parent_id');
     }
 
-    /**
-     * Уникальный slug в пределах магазина (кириллица → латиница).
-     */
     public function uniqueSlug(): string
     {
         $base = Slugger::slug($this->name) ?: 'kategoriya';
@@ -78,14 +75,6 @@ class Category extends Model
         return $this->hasMany(Product::class);
     }
 
-    /**
-     * Дерево активных категорий магазина для меню витрины.
-     *
-     * Каждый узел получает products_count_total — количество товаров
-     * в категории вместе со всеми подкатегориями.
-     *
-     * @return array<int, Category>
-     */
     public static function menuTree(): array
     {
         $tenantId = app(TenantContext::class)->id();
@@ -97,7 +86,6 @@ class Category extends Model
         $categories = static::query()
             ->where('tenant_id', $tenantId)
             ->where('is_active', true)
-            // Считаем только товары, видимые на витрине (активные и не удалённые из 1С)
             ->withCount(['products' => fn ($query) => $query->active()])
             ->orderBy('sort_order')
             ->orderBy('id')
@@ -105,9 +93,6 @@ class Category extends Model
 
         $byId = $categories->keyBy('id');
 
-        // Заранее инициализируем пустые Eloquent-коллекции детей, чтобы обращение
-        // ->children в цикле не выполняло отдельный SQL-запрос (это приводило
-        // к дублированию категорий в подменю).
         foreach ($categories as $category) {
             $category->setRelation('children', new EloquentCollection());
         }
@@ -116,7 +101,6 @@ class Category extends Model
         $attached = [];
 
         foreach ($categories as $category) {
-            // Защита от циклических parent_id (A → B → A): узел участвует в дереве один раз
             if (isset($attached[$category->id])) {
                 continue;
             }
@@ -155,11 +139,6 @@ class Category extends Model
         return $roots;
     }
 
-    /**
-     * Идентификаторы категории и всех её подкатегорий (для фильтра товаров).
-     *
-     * @return array<int, int>
-     */
     public function descendantIds(): array
     {
         $ids = [$this->id];
@@ -185,23 +164,24 @@ class Category extends Model
 
     /**
      * Количество товаров в категории вместе со всеми подкатегориями (для админки).
-     * Считается одним запросом на тенанта и кэшируется на время запроса.
      */
     public function productCountWithChildren(): int
     {
-        $tenantId = app(TenantContext::class)->id();
+        $tenantId = app(TenantContext::class)->id() ?? $this->tenant_id;
+
+        if ($tenantId === null) {
+            return (int) ($this->products_count ?? 0);
+        }
 
         if (self::$productCountsMap === null || self::$productCountsTenantId !== $tenantId) {
             self::$productCountsTenantId = $tenantId;
-            self::$productCountsMap = static::buildProductCountsMap($tenantId);
+            self::$productCountsMap = static::buildProductCountsMap((int) $tenantId);
         }
 
-        return self::$productCountsMap[$this->id] ?? (int) $this->products_count;
+        return self::$productCountsMap[$this->id] ?? (int) ($this->products_count ?? 0);
     }
 
     /**
-     * Строит карту «id категории → количество товаров вместе с подкатегориями».
-     *
      * @return array<int, int>
      */
     protected static function buildProductCountsMap(int $tenantId): array
@@ -230,7 +210,6 @@ class Category extends Model
         $visited = [];
         $map = [];
 
-        // Суммируем снизу вверх: у родителя складываются прямые товары и товары всех потомков
         $compute = function (Category $node) use (&$compute, &$visited, &$map): int {
             if (isset($visited[$node->id])) {
                 return $map[$node->id] ?? 0;
@@ -260,13 +239,13 @@ class Category extends Model
 
     private static ?int $parentsMapTenantId = null;
 
-    /**
-     * Уровень вложенности категории (0 — корень). Используется для иерархического
-     * отображения дерева в админке.
-     */
     public function getDepthAttribute(): int
     {
-        $tenantId = app(TenantContext::class)->id();
+        $tenantId = app(TenantContext::class)->id() ?? $this->tenant_id;
+
+        if ($tenantId === null) {
+            return 0;
+        }
 
         if (self::$parentsMap === null || self::$parentsMapTenantId !== $tenantId) {
             self::$parentsMapTenantId = $tenantId;
