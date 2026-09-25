@@ -82,18 +82,25 @@ class Tenant extends Model
      *
      * Приоритет:
      *  1. Свой (кастомный) домен, если подключён;
-     *  2. Path на корневом домене платформы: https://{root}/{slug}
-     *  3. Поддомен (если routing=subdomain).
+     *  2. Path на текущем хосте: /{slug} (shared-хостинг без wildcard DNS);
+     *  3. Поддомен (если ATLAS_TENANT_ROUTING=subdomain).
      */
     public function url(): string
     {
         $primary = $this->domains()->where('is_primary', true)->value('domain');
 
         if ($primary) {
-            return 'https://'.$primary;
+            return str_starts_with($primary, 'http://') || str_starts_with($primary, 'https://')
+                ? $primary
+                : 'https://'.$primary;
         }
 
-        $root = rtrim((string) config('app.url'), '/');
+        $slug = $this->slug ?: $this->subdomain;
+
+        if ($slug === null || $slug === '') {
+            return url('/');
+        }
+
         $routing = config('atlas.tenant_routing', 'path');
 
         if ($routing === 'subdomain' && $this->subdomain) {
@@ -102,8 +109,9 @@ class Tenant extends Model
             return 'https://'.$this->subdomain.'.'.$rootDomain;
         }
 
-        // Path-режим (по умолчанию) — работает на shared-хостинге без wildcard DNS
-        return $root.'/'.$this->slug;
+        // Path-режим: абсолютный URL на текущий хост + /{slug}
+        // url() учитывает запрос/APP_URL корректнее, чем ручная склейка config('app.url')
+        return url('/'.$slug);
     }
 
     /**
