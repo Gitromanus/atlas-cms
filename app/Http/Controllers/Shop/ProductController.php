@@ -12,13 +12,20 @@ class ProductController extends Controller
     {
         abort_unless($product->is_active && ! $product->is_deleted_from_1c, 404);
 
-        $product->load(['features', 'variants']);
+        $product->load([
+            'images',
+            'category',
+            'features',
+            'variants',
+            'prices',
+            'stocks',
+        ]);
 
         $related = Product::query()
             ->active()
             ->where('id', '!=', $product->id)
-            ->where('category_id', $product->category_id)
-            ->with(['mainImage', 'features', 'variants'])
+            ->when($product->category_id, fn ($q) => $q->where('category_id', $product->category_id))
+            ->with(['mainImage', 'features', 'variants', 'prices', 'stocks'])
             ->limit(4)
             ->get();
 
