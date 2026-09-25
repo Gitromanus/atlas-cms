@@ -41,6 +41,13 @@ class Category extends Model
         });
     }
 
+    public function resolveRouteBinding($value, $field = null)
+    {
+        $field = $field ?? $this->getRouteKeyName();
+
+        return static::query()->where($field, $value)->first() ?? abort(404);
+    }
+
     public function parent(): BelongsTo
     {
         return $this->belongsTo(Category::class, 'parent_id');
@@ -162,9 +169,6 @@ class Category extends Model
 
     private static ?int $productCountsTenantId = null;
 
-    /**
-     * Количество товаров в категории вместе со всеми подкатегориями (для админки).
-     */
     public function productCountWithChildren(): int
     {
         $tenantId = app(TenantContext::class)->id() ?? $this->tenant_id;
@@ -181,9 +185,6 @@ class Category extends Model
         return self::$productCountsMap[$this->id] ?? (int) ($this->products_count ?? 0);
     }
 
-    /**
-     * @return array<int, int>
-     */
     protected static function buildProductCountsMap(int $tenantId): array
     {
         $categories = static::query()
