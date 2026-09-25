@@ -50,7 +50,8 @@ class Product extends Model
 
     public function resolveRouteBinding($value, $field = null)
     {
-        $field = $field ?: 'slug';
+        // Filament: id; витрина: {product:slug}. Не форсировать slug.
+        $field = $field ?? $this->getRouteKeyName();
 
         return static::query()->where($field, $value)->first() ?? abort(404);
     }
@@ -173,7 +174,8 @@ class Product extends Model
 
     public function mainImage(): HasOne
     {
-        return $this->hasOne(ProductImage::class)->oldestOfMany('sort_order');
+        // Без oldestOfMany: с BelongsToTenant global scope даёт SQL 500
+        return $this->hasOne(ProductImage::class)->orderBy('sort_order')->orderBy('id');
     }
 
     public function defaultPrice(): HasOne
