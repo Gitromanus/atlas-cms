@@ -13,9 +13,12 @@
     # Запросы, уже идущие в public/, не трогаем
     RewriteRule ^public(/|$) - [L,NC]
 
-    # Остальное перенаправляем в public/ (несуществующие файлы/каталоги)
+    # Корень сайта — сразу в public/ (в корне нет index.php)
+    RewriteRule ^$ public/ [L]
+
+    # Остальное: существующие файлы (стили, картинки) отдаём как есть,
+    # всё остальное направляем в public/
     RewriteCond %{REQUEST_FILENAME} !-f
-    RewriteCond %{REQUEST_FILENAME} !-d
     RewriteRule ^(.*)$ public/$1 [L]
 </IfModule>
 
