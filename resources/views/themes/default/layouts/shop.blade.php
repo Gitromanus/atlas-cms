@@ -43,9 +43,10 @@
     $hours = $settings['hours'] ?? null;
     $about = $settings['about'] ?? null;
     $phoneHref = $phone ? preg_replace('/[^\d+]/', '', $phone) : null;
+    $enableArticles = (bool) ($settings['enable_articles'] ?? true);
+    $enableNews = (bool) ($settings['enable_news'] ?? true);
 @endphp
 
-{{-- atlas-layout-v3: no top bar --}}
 <header class="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
     <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
         <a href="{{ route('home') }}" class="flex shrink-0 items-center gap-2">
@@ -60,6 +61,12 @@
         <nav class="hidden items-center gap-5 md:flex">
             <a href="{{ route('home') }}" class="font-medium transition hover:text-primary">Главная</a>
             <a href="{{ route('catalog.index') }}" class="font-medium transition hover:text-primary">Каталог</a>
+            @if ($enableArticles)
+                <a href="{{ route('articles.index') }}" class="font-medium transition hover:text-primary">Статьи</a>
+            @endif
+            @if ($enableNews)
+                <a href="{{ route('news.index') }}" class="font-medium transition hover:text-primary">Новости</a>
+            @endif
             @php($categoryMenu = \App\Models\Category::menuTree())
             @foreach ($categoryMenu as $category)
                 @include('shop.partials.category-menu', ['category' => $category, 'menuLevel' => 0])
@@ -68,8 +75,7 @@
 
         <form action="{{ route('catalog.index') }}" method="GET" class="hidden max-w-xs flex-1 lg:block">
             <div class="relative">
-                <input type="search" name="q" value="{{ request('q') }}"
-                       placeholder="Поиск товаров…"
+                <input type="search" name="q" value="{{ request('q') }}" placeholder="Поиск товаров…"
                        class="w-full rounded-full border border-slate-200 bg-slate-50 py-1.5 pl-3 pr-9 text-sm focus:border-primary focus:bg-white focus:outline-none">
                 <button type="submit" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-primary" aria-label="Найти">
                     <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>
@@ -95,11 +101,9 @@
                     @endif
                 @endif
             </a>
-
             @auth('customers')
                 <a href="{{ route('account.orders') }}" class="hidden text-sm font-medium transition hover:text-primary sm:block">Мои заказы</a>
-                <form method="POST" action="{{ route('customer.logout') }}">
-                    @csrf
+                <form method="POST" action="{{ route('customer.logout') }}">@csrf
                     <button type="submit" class="rounded-theme border border-slate-300 px-3 py-1.5 text-sm font-medium transition hover:bg-slate-100">Выйти</button>
                 </form>
             @else
@@ -111,21 +115,13 @@
 
 <main class="mx-auto max-w-6xl flex-1 px-4 py-8">
     @if (session('status'))
-        <div class="mb-6 rounded-theme border border-green-200 bg-green-50 px-4 py-3 text-green-800">
-            {{ session('status') }}
-        </div>
+        <div class="mb-6 rounded-theme border border-green-200 bg-green-50 px-4 py-3 text-green-800">{{ session('status') }}</div>
     @endif
-
     @if ($errors->any())
         <div class="mb-6 rounded-theme border border-red-200 bg-red-50 px-4 py-3 text-red-800">
-            <ul class="list-disc pl-4">
-                @foreach ($errors->all() as $error)
-                    <li>{{ $error }}</li>
-                @endforeach
-            </ul>
+            <ul class="list-disc pl-4">@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul>
         </div>
     @endif
-
     @yield('content')
 </main>
 
@@ -133,28 +129,15 @@
     <div class="mx-auto grid max-w-6xl gap-8 px-4 py-10 sm:grid-cols-2 lg:grid-cols-3">
         <div>
             <p class="text-base font-bold text-slate-900">{{ $shopName }}</p>
-            @if (filled($about))
-                <p class="mt-2 text-sm leading-relaxed text-slate-600">{{ $about }}</p>
-            @endif
+            @if (filled($about))<p class="mt-2 text-sm leading-relaxed text-slate-600">{{ $about }}</p>@endif
         </div>
         <div class="text-sm text-slate-600">
             <p class="font-semibold text-slate-900">Контакты</p>
             <ul class="mt-2 space-y-1">
-                @if (filled($phone))
-                    <li><a href="tel:{{ $phoneHref }}" class="hover:text-primary">{{ $phone }}</a></li>
-                @endif
-                @if (filled($email))
-                    <li><a href="mailto:{{ $email }}" class="hover:text-primary">{{ $email }}</a></li>
-                @endif
-                @if (filled($address))
-                    <li>{{ $address }}</li>
-                @endif
-                @if (filled($hours))
-                    <li class="text-slate-500">{{ $hours }}</li>
-                @endif
-                @if (! filled($phone) && ! filled($email) && ! filled($address))
-                    <li class="text-slate-400">Укажите контакты в админке → Настройки магазина</li>
-                @endif
+                @if (filled($phone))<li><a href="tel:{{ $phoneHref }}" class="hover:text-primary">{{ $phone }}</a></li>@endif
+                @if (filled($email))<li><a href="mailto:{{ $email }}" class="hover:text-primary">{{ $email }}</a></li>@endif
+                @if (filled($address))<li>{{ $address }}</li>@endif
+                @if (filled($hours))<li class="text-slate-500">{{ $hours }}</li>@endif
             </ul>
         </div>
         <div class="text-sm text-slate-600">
@@ -164,6 +147,8 @@
                 <li><a href="{{ route('cart.index') }}" class="hover:text-primary">Корзина</a></li>
                 <li><a href="{{ route('account.orders') }}" class="hover:text-primary">Мои заказы</a></li>
                 <li><a href="{{ route('order.track') }}" class="hover:text-primary">Статус заказа</a></li>
+                @if ($enableArticles)<li><a href="{{ route('articles.index') }}" class="hover:text-primary">Статьи</a></li>@endif
+                @if ($enableNews)<li><a href="{{ route('news.index') }}" class="hover:text-primary">Новости</a></li>@endif
             </ul>
         </div>
     </div>
@@ -174,7 +159,6 @@
         </div>
     </div>
 </footer>
-
 @stack('scripts')
 </body>
 </html>
