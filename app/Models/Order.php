@@ -25,12 +25,20 @@ class Order extends Model
         'customer_phone',
         'customer_email',
         'delivery_method',
+        'delivery_method_id',
         'delivery_address',
         'payment_method',
+        'payment_status',
+        'payment_id',
         'comment',
         'is_paid',
         'exported_to_1c',
         'placed_at',
+        'utm_source',
+        'utm_medium',
+        'utm_campaign',
+        'utm_content',
+        'utm_term',
     ];
 
     protected function casts(): array
@@ -63,5 +71,10 @@ class Order extends Model
     public function items(): HasMany
     {
         return $this->hasMany(OrderItem::class);
+    }
+
+    public function deliveryMethod(): BelongsTo
+    {
+        return $this->belongsTo(DeliveryMethod::class);
     }
 }
