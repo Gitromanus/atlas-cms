@@ -9,7 +9,7 @@
 при push в `main` он собирает `vendor` и загружает проект по FTP в
 `/home/n/netesngmai/public_html/` (порт 21).
 
-Секреты репозитория: `FTP_HOST`, `FTP_USERNAME`, `FTP_PASSWORD`, `FTP_PORT` (опционально).
+Секреты репозитория: `FTP_SERVER`, `FTP_USERNAME`, `FTP_PASSWORD`, `FTP_PORT` (опционально).
 
 > Деплой **не затирает** на сервере: `.env`, базу данных, `storage/app`
 > (изображения и файлы обмена 1С), сессии, кэш и логи.

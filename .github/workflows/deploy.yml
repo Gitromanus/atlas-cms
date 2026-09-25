@@ -1,7 +1,7 @@
 # Деплой AtlasCMS на хостинг SpaceWeb по FTP.
 #
 # Секреты репозитория (Settings → Secrets and variables → Actions), ожидаемые имена:
-#   FTP_HOST      — адрес FTP-сервера (например, ftp.your-site.ru или IP)
+#   FTP_SERVER    — адрес FTP-сервера (например, ftp.your-site.ru или IP)
 #   FTP_USERNAME  — логин FTP (например, netesngmai)
 #   FTP_PASSWORD  — пароль FTP
 #   FTP_PORT      — порт (для SpaceWeb обычно 21); если не задан, берётся 21
@@ -24,7 +24,7 @@ concurrency:
 jobs:
   deploy:
     name: Сборка и загрузка по FTP
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
 
     steps:
@@ -60,7 +60,7 @@ jobs:
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           # Хост и учётные данные берём из секретов репозитория
-          server: ${{ secrets.FTP_HOST }}
+          server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           port: ${{ secrets.FTP_PORT || '21' }}
