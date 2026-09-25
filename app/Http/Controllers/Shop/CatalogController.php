@@ -27,7 +27,7 @@ class CatalogController extends Controller
 
         $products = Product::query()
             ->active()
-            ->with(['mainImage', 'category'])
+            ->with(['mainImage', 'category', 'features', 'variants'])
             ->when($category !== null, function ($q) use ($category) {
                 // Товары категории и всех её подкатегорий
                 $q->whereIn('category_id', $category->descendantIds());

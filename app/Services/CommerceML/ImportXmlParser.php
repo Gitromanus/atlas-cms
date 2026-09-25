@@ -249,6 +249,7 @@ class ImportXmlParser
                         'value' => $feature['value'],
                         'is_variant' => true,
                         'options' => $feature['options'],
+                        'sort_order' => ((int) $product->features()->max('sort_order')) + 1,
                     ]);
 
                     continue;
@@ -272,6 +273,7 @@ class ImportXmlParser
                 'value' => $feature['value'],
                 'is_variant' => false,
                 'options' => null,
+                'sort_order' => ((int) $product->features()->max('sort_order')) + 1,
             ]);
         }
     }

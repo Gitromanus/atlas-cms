@@ -156,10 +156,15 @@
                 }
             </script>
 
-            @if ($product->features->isNotEmpty())
+            @php
+                // Вариантные свойства (цвет, размер) показаны в пикере выше — не дублируем их в таблице характеристик
+                $plainFeatures = $product->features->reject(fn ($feature) => $feature->is_variant);
+            @endphp
+
+            @if ($plainFeatures->isNotEmpty())
                 <h2 class="mt-10 mb-3 text-xl font-bold">Характеристики</h2>
                 <dl class="divide-y divide-slate-200 rounded-theme bg-white shadow-sm">
-                    @foreach ($product->features as $feature)
+                    @foreach ($plainFeatures as $feature)
                         <div class="flex justify-between gap-4 px-4 py-2.5">
                             <dt class="text-slate-500">{{ $feature->name }}</dt>
                             <dd class="font-medium">{{ $feature->value }}</dd>

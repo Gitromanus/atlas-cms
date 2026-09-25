@@ -75,7 +75,9 @@ class Product extends Model
 
     public function features(): HasMany
     {
-        return $this->hasMany(ProductFeature::class)->orderBy('sort_order');
+        return $this->hasMany(ProductFeature::class)
+            ->orderBy('sort_order')
+            ->orderBy('id');
     }
 
     /**

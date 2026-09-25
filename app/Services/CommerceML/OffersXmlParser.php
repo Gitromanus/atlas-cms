@@ -292,6 +292,7 @@ class OffersXmlParser
                     'value' => $value,
                     'is_variant' => true,
                     'options' => [$value],
+                    'sort_order' => ((int) $product->features()->max('sort_order')) + 1,
                 ]);
 
                 continue;

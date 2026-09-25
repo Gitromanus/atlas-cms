@@ -178,4 +178,38 @@ class Category extends Model
 
         return $ids;
     }
+
+    private static ?array $parentsMap = null;
+
+    private static ?int $parentsMapTenantId = null;
+
+    /**
+     * Уровень вложенности категории (0 — корень). Используется для иерархического
+     * отображения дерева в админке.
+     */
+    public function getDepthAttribute(): int
+    {
+        $tenantId = app(TenantContext::class)->id();
+
+        if (self::$parentsMap === null || self::$parentsMapTenantId !== $tenantId) {
+            self::$parentsMapTenantId = $tenantId;
+            self::$parentsMap = static::query()
+                ->where('tenant_id', $tenantId)
+                ->pluck('parent_id', 'id')
+                ->map(fn ($parentId): ?int => $parentId !== null ? (int) $parentId : null)
+                ->all();
+        }
+
+        $depth = 0;
+        $current = (int) $this->id;
+        $seen = [];
+
+        while (isset(self::$parentsMap[$current]) && self::$parentsMap[$current] !== null && ! isset($seen[$current])) {
+            $seen[$current] = true;
+            $depth++;
+            $current = self::$parentsMap[$current];
+        }
+
+        return $depth;
+    }
 }

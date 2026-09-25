@@ -27,30 +27,67 @@ class ProductResource extends Resource
     {
         return $form
             ->schema([
-                Forms\Components\Section::make('Основное')
+                // Компактная раскладка: слева изображения, справа основные данные (как в классических админках)
+                Forms\Components\Grid::make(['default' => 1, 'md' => 3])
                     ->schema([
-                        Forms\Components\TextInput::make('name')
-                            ->label('Название')
-                            ->required()
-                            ->maxLength(255),
-                        Forms\Components\TextInput::make('slug')
-                            ->label('ЧПУ (slug)')
-                            ->helperText('Оставьте пустым — сгенерируется из названия (кириллица → латиница)'),
-                        Forms\Components\TextInput::make('sku')
-                            ->label('Артикул'),
-                        Forms\Components\TextInput::make('barcode')
-                            ->label('Штрихкод'),
-                        Forms\Components\Select::make('category_id')
-                            ->label('Категория')
-                            ->relationship('category', 'name'),
-                        Forms\Components\TextInput::make('unit')
-                            ->label('Единица измерения'),
-                        Forms\Components\Textarea::make('description')
-                            ->label('Описание')
-                            ->rows(6)
-                            ->columnSpanFull(),
-                    ])
-                    ->columns(2),
+                        Forms\Components\Section::make('Изображения')
+                            ->description('Превью из 1С; новые файлы — кнопкой ниже')
+                            ->schema([
+                                Forms\Components\Repeater::make('images')
+                                    ->relationship('images')
+                                    ->label('Изображения товара')
+                                    ->itemLabel(fn (array $state): ?string => filled($state['path'] ?? null)
+                                        ? basename((string) $state['path'])
+                                        : ($state['url'] ?? null))
+                                    ->schema([
+                                        Forms\Components\ViewField::make('preview')
+                                            ->view('filament.shop.product-image-preview')
+                                            ->dehydrated(false),
+                                        Forms\Components\TextInput::make('url')
+                                            ->label('Ссылка (из 1С)')
+                                            ->url()
+                                            ->placeholder('https://…'),
+                                    ])
+                                    ->defaultItems(0)
+                                    ->reorderableWithButtons()
+                                    ->collapsible(),
+                                Forms\Components\FileUpload::make('new_images')
+                                    ->label('Добавить новые изображения')
+                                    ->helperText('Файлы сохранятся вместе с товаром')
+                                    ->disk('public')
+                                    ->directory(fn () => 'products/'.self::tenantSlug().'/'.now()->format('Y/m'))
+                                    ->image()
+                                    ->multiple()
+                                    ->reorderable(),
+                            ])
+                            ->columnSpan(['default' => 1, 'md' => 1]),
+                        Forms\Components\Section::make('Основное')
+                            ->schema([
+                                Forms\Components\TextInput::make('name')
+                                    ->label('Название')
+                                    ->required()
+                                    ->maxLength(255)
+                                    ->columnSpanFull(),
+                                Forms\Components\TextInput::make('slug')
+                                    ->label('ЧПУ (slug)')
+                                    ->helperText('Пусто — сгенерируется из названия'),
+                                Forms\Components\Select::make('category_id')
+                                    ->label('Категория')
+                                    ->relationship('category', 'name'),
+                                Forms\Components\TextInput::make('sku')
+                                    ->label('Артикул'),
+                                Forms\Components\TextInput::make('barcode')
+                                    ->label('Штрихкод'),
+                                Forms\Components\TextInput::make('unit')
+                                    ->label('Единица измерения'),
+                                Forms\Components\Textarea::make('description')
+                                    ->label('Описание')
+                                    ->rows(5)
+                                    ->columnSpanFull(),
+                            ])
+                            ->columns(2)
+                            ->columnSpan(['default' => 1, 'md' => 2]),
+                    ]),
                 Forms\Components\Section::make('Статус')
                     ->schema([
                         Forms\Components\Toggle::make('is_active')
@@ -60,8 +97,15 @@ class ProductResource extends Resource
                             ->label('Помечен на удаление в 1С'),
                     ])
                     ->columns(2),
+                Forms\Components\Section::make('Варианты (из 1С)')
+                    ->description('Реальные комбинации характеристик: цена и остаток по каждому варианту')
+                    ->schema([
+                        Forms\Components\ViewField::make('variants_preview')
+                            ->view('filament.shop.product-variants')
+                            ->dehydrated(false),
+                    ]),
                 Forms\Components\Section::make('Характеристики')
-                    ->description('Свойство-вариант (цвет, размер) с заполненными вариантами значений выбирается на витрине')
+                    ->description('Перетаскивайте строки, чтобы задать порядок. Свойства с включённым «Вариантом» выбираются на витрине.')
                     ->schema([
                         Forms\Components\Repeater::make('features')
                             ->relationship('features')
@@ -81,22 +125,18 @@ class ProductResource extends Resource
                                 Forms\Components\TagsInput::make('options')
                                     ->label('Варианты значений')
                                     ->placeholder('Добавить значение…'),
-                                Forms\Components\TextInput::make('sort_order')
-                                    ->label('Порядок')
-                                    ->numeric()
-                                    ->default(0),
                             ])
-                            ->columns(3)
+                            ->columns(2)
                             ->defaultItems(0)
                             ->reorderableWithButtons()
                             ->collapsible(),
                     ]),
                 Forms\Components\Section::make('Цены и остатки')
-                    ->description('Цены по типам цен и остатки по складам (приходят из 1С, можно править вручную)')
+                    ->description('Приходят из 1С; можно править вручную')
                     ->schema([
                         Forms\Components\Repeater::make('prices')
                             ->relationship('prices')
-                            ->label('Цены')
+                            ->label('Цены по типам цен')
                             ->itemLabel(fn (array $state): ?string => isset($state['price'])
                                 ? 'Цена: '.number_format((float) $state['price'], 2, ',', ' ')
                                 : null)
@@ -134,47 +174,6 @@ class ProductResource extends Resource
                             ->defaultItems(0)
                             ->reorderableWithButtons()
                             ->collapsible(),
-                    ]),
-                Forms\Components\Section::make('Изображения')
-                    ->description('Картинки из 1С показаны превью. Новые файлы загружаются кнопкой ниже и сохраняются вместе с товаром.')
-                    ->schema([
-                        Forms\Components\Repeater::make('images')
-                            ->relationship('images')
-                            ->label('Изображения товара')
-                            ->itemLabel(fn (array $state): ?string => filled($state['path'] ?? null)
-                                ? basename((string) $state['path'])
-                                : ($state['url'] ?? null))
-                            ->schema([
-                                Forms\Components\ViewField::make('preview')
-                                    ->view('filament.shop.product-image-preview')
-                                    ->dehydrated(false)
-                                    ->columnSpan(2),
-                                Forms\Components\TextInput::make('path')
-                                    ->label('Путь к файлу')
-                                    ->disabled()
-                                    ->dehydrated(false),
-                                Forms\Components\TextInput::make('url')
-                                    ->label('Внешняя ссылка (из 1С)')
-                                    ->url()
-                                    ->placeholder('https://example.com/image.jpg'),
-                                Forms\Components\TextInput::make('sort_order')
-                                    ->label('Порядок')
-                                    ->numeric()
-                                    ->default(0),
-                            ])
-                            ->columns(2)
-                            ->defaultItems(0)
-                            ->reorderableWithButtons()
-                            ->collapsible(),
-                        Forms\Components\FileUpload::make('new_images')
-                            ->label('Добавить новые изображения')
-                            ->helperText('Загруженные файлы будут добавлены к товару после сохранения')
-                            ->disk('public')
-                            ->directory(fn () => 'products/'.self::tenantSlug().'/'.now()->format('Y/m'))
-                            ->image()
-                            ->multiple()
-                            ->reorderable()
-                            ->columnSpanFull(),
                     ]),
             ]);
     }

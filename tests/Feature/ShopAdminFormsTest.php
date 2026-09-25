@@ -4,8 +4,12 @@ namespace Tests\Feature;
 
 use App\Filament\Shop\Resources\OrderResource\Pages\EditOrder;
 use App\Filament\Shop\Resources\OrderResource\Pages\ListOrders;
+use App\Filament\Shop\Resources\ProductResource\Pages\EditProduct;
+use App\Filament\Shop\Resources\ProductResource\Pages\ListProducts;
 use App\Models\Order;
 use App\Models\OrderStatus;
+use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Models\Tenant;
 use App\Models\Theme;
 use App\Models\User;
@@ -76,5 +80,54 @@ class ShopAdminFormsTest extends TestCase
         Livewire::test(EditOrder::class, ['record' => $order->getRouteKey()])
             ->assertOk()
             ->assertSee('Сумма');
+    }
+
+    public function test_product_pages_render_with_new_compact_form(): void
+    {
+        $theme = Theme::query()->create(['slug' => 'default', 'name' => 'Default']);
+        $tenant = Tenant::query()->create([
+            'name' => 'Тест-магазин',
+            'subdomain' => 'test',
+            'slug' => 'testshop',
+            'theme_id' => $theme->id,
+            'is_active' => true,
+        ]);
+
+        $user = User::query()->create([
+            'tenant_id' => $tenant->id,
+            'name' => 'Владелец',
+            'email' => 'owner@test.ru',
+            'password' => Hash::make('secret123'),
+        ]);
+
+        $product = Product::query()->create([
+            'tenant_id' => $tenant->id,
+            'ext_id' => 'prod-v-1',
+            'name' => 'Футболка с вариантами',
+            'sku' => 'SKU-V1',
+            'is_active' => true,
+        ]);
+
+        ProductVariant::query()->create([
+            'tenant_id' => $tenant->id,
+            'product_id' => $product->id,
+            'ext_id' => 'v-1',
+            'options' => ['Цвет' => 'Красный', 'Размер' => 'M'],
+            'price' => 1500.00,
+            'quantity' => 4,
+        ]);
+
+        $this->actingAs($user);
+
+        Livewire::test(ListProducts::class)
+            ->assertOk()
+            ->assertSee('Товары');
+
+        // Форма с новой компактной раскладкой и блоком вариантов рендерится без ошибок
+        Livewire::test(EditProduct::class, ['record' => $product->getRouteKey()])
+            ->assertOk()
+            ->assertSee('Варианты')
+            ->assertSee('Цена')
+            ->assertSee('Остаток');
     }
 }

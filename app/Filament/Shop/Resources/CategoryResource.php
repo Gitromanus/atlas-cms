@@ -55,10 +55,15 @@ class CategoryResource extends Resource
                 Tables\Columns\TextColumn::make('name')
                     ->label('Название')
                     ->searchable()
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('parent.name')
-                    ->label('Родитель')
-                    ->placeholder('—'),
+                    ->sortable()
+                    // Дерево: подкатегории с отступами от уровня вложенности
+                    ->formatStateUsing(function (string $state, Category $record): string {
+                        if ($record->depth === 0) {
+                            return $state;
+                        }
+
+                        return str_repeat('— ', $record->depth).$state;
+                    }),
                 Tables\Columns\TextColumn::make('products_count')
                     ->label('Товаров')
                     ->counts('products'),

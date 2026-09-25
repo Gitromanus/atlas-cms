@@ -19,6 +19,21 @@
             <p class="text-xs text-slate-400">Артикул: {{ $product->sku }}</p>
         @endif
 
+        @php($cardVariants = $product->variantFeatures()
+            ->filter(fn ($feature) => filled($feature->options))
+            ->take(2))
+
+        @if ($cardVariants->isNotEmpty())
+            <div class="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                @foreach ($cardVariants as $feature)
+                    <span title="{{ $feature->name }}: {{ implode(', ', $feature->options) }}">
+                        {{ $feature->name }}:
+                        <span class="font-medium text-slate-700">{{ collect($feature->options)->take(4)->implode(', ') }}</span>
+                    </span>
+                @endforeach
+            </div>
+        @endif
+
         <div class="mt-auto flex items-center justify-between pt-2">
             <span class="text-lg font-bold">
                 {{ $product->price !== null ? number_format($product->price, 0, ',', ' ') . ' ₽' : 'Цена по запросу' }}
