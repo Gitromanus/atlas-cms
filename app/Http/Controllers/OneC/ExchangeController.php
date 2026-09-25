@@ -196,8 +196,22 @@ class ExchangeController extends Controller
             return response('success');
         }
 
-        // Каталог: запускаем в фоне
+        // Каталог: обработка синхронно (не требует cron/воркера) или через очередь
         $isOffers = str_contains(strtolower($filename), 'offers');
+
+        if (config('atlas.onec.sync_import', false)) {
+            try {
+                $job = $isOffers
+                    ? new ImportOffersJob($tenant->id, $filename)
+                    : new ImportCatalogJob($tenant->id, $filename);
+
+                $job->handle();
+            } catch (\Throwable $e) {
+                return response('failure');
+            }
+
+            return response('success');
+        }
 
         if ($isOffers) {
             ImportOffersJob::dispatch($tenant->id, $filename);
