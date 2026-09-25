@@ -128,12 +128,29 @@ jobs:
 
       - name: Миграции и базовый сид БД
         run: |
+          # На хостинге CLI-php может быть старым (parse error в artisan).
+          # Перебираем доступные бинарники PHP 8.x на сервере и используем первый.
           sshpass -p "$SSH_PASSWORD" ssh -p "$SSH_PORT" -o StrictHostKeyChecking=no \
             "$SSH_USERNAME@$SSH_HOST" '
               set -e
               cd ~/public_html || exit 1
-              php artisan migrate --force
-              php artisan db:seed --force
+
+              PHP_BIN=""
+              for bin in php8.3 php8.2 php8.1 php8.0 php; do
+                if command -v "$bin" >/dev/null 2>&1; then
+                  PHP_BIN="$bin"
+                  break
+                fi
+              done
+
+              if [ -z "$PHP_BIN" ]; then
+                echo "Не найден PHP 8.x на сервере (проверьте бинарники: which php*)" >&2
+                exit 1
+              fi
+
+              echo "PHP: $PHP_BIN $("$PHP_BIN" -r "echo PHP_VERSION;" )"
+              "$PHP_BIN" artisan migrate --force
+              "$PHP_BIN" artisan db:seed --force
             '
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
