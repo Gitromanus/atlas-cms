@@ -30,15 +30,18 @@ class ProductResource extends Resource
                 Forms\Components\Grid::make(['default' => 1, 'md' => 3])
                     ->schema([
                         Forms\Components\Section::make('Изображения')
-                            ->description('Загрузите фото и нажмите Сохранить')
+                            ->description('Загрузите фото и нажмите Сохранить. Первое станет основным.')
                             ->schema([
                                 Forms\Components\FileUpload::make('new_images')
                                     ->label('Добавить изображения')
                                     ->disk('public')
-                                    ->directory(fn () => 'products/'.self::tenantSlug().'/'.now()->format('Y/m'))
+                                    ->directory(fn (): string => 'products/'.self::tenantSlug().'/'.now()->format('Y/m'))
+                                    ->visibility('public')
                                     ->image()
                                     ->multiple()
-                                    ->reorderable(),
+                                    ->reorderable()
+                                    ->maxFiles(20)
+                                    ->dehydrated(true),
                             ])
                             ->columnSpan(['default' => 1, 'md' => 1]),
                         Forms\Components\Section::make('Основное')
@@ -48,8 +51,7 @@ class ProductResource extends Resource
                                     ->required()
                                     ->maxLength(255)
                                     ->columnSpanFull(),
-                                Forms\Components\TextInput::make('slug')
-                                    ->label('ЧПУ (slug)'),
+                                Forms\Components\TextInput::make('slug')->label('ЧПУ (slug)'),
                                 Forms\Components\Select::make('category_id')
                                     ->label('Категория')
                                     ->relationship('category', 'name'),
@@ -94,22 +96,29 @@ class ProductResource extends Resource
             ]);
     }
 
+    /**
+     * @param  array<int, string>  $paths
+     */
     public static function storeNewImages(Product $product, array $paths): void
     {
+        $paths = array_values(array_filter($paths, fn ($p) => is_string($p) && $p !== ''));
+
         if ($paths === []) {
             return;
         }
 
-        $startOrder = ((int) $product->images()->max('sort_order')) + 1;
+        $startOrder = (int) $product->images()->max('sort_order');
 
         foreach ($paths as $index => $path) {
+            $path = ltrim($path, '/');
+
             ProductImage::query()->create([
                 'tenant_id' => $product->tenant_id,
                 'product_id' => $product->id,
                 'path' => $path,
                 'url' => null,
                 'source' => 'manual',
-                'sort_order' => $startOrder + $index,
+                'sort_order' => $startOrder + $index + 1,
             ]);
         }
     }
@@ -156,7 +165,16 @@ class ProductResource extends Resource
                     ->url(null)
                     ->modal()
                     ->slideOver()
-                    ->after(fn (Product $record, array $data): mixed => self::storeNewImages($record, $data['new_images'] ?? [])),
+                    ->using(function (array $data, Product $record): Product {
+                        $paths = $data['new_images'] ?? [];
+                        unset($data['new_images']);
+
+                        $record->update($data);
+
+                        self::storeNewImages($record, is_array($paths) ? $paths : []);
+
+                        return $record->refresh();
+                    }),
                 Tables\Actions\DeleteAction::make(),
             ])
             ->bulkActions([

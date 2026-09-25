@@ -26,7 +26,6 @@ Route::post('/create-shop', [ShopRegistrationController::class, 'store']);
 
 Route::redirect('/login', '/shop/login');
 
-// Временная диагностика 500 — открыть /_atlas_debug/futbolka-classic-belaya
 Route::get('/_atlas_debug/{slug?}', function (?string $slug = 'futbolka-classic-belaya') {
     try {
         $tenant = \App\Models\Tenant::query()->where('slug', 'odeza-i-obuv')->first();
@@ -57,6 +56,26 @@ Route::get('/_atlas_debug/{slug?}', function (?string $slug = 'futbolka-classic-
     }
 });
 
+Route::get('/_atlas_debug_view/{slug?}', function (?string $slug = 'futbolka-classic-belaya') {
+    try {
+        $tenant = \App\Models\Tenant::query()->where('slug', 'odeza-i-obuv')->first();
+        app(\App\Services\Tenant\TenantContext::class)->set($tenant);
+        \Illuminate\Support\Facades\URL::defaults(['shop' => 'odeza-i-obuv']);
+
+        $product = \App\Models\Product::query()->where('slug', $slug)->firstOrFail();
+        $product->load(['images', 'category', 'features', 'prices']);
+        $related = collect();
+
+        return view('shop.product', compact('product', 'related'));
+    } catch (\Throwable $e) {
+        return response(
+            $e::class.': '.$e->getMessage()."\n".$e->getFile().':'.$e->getLine()."\n\n".$e->getTraceAsString(),
+            500,
+            ['Content-Type' => 'text/plain; charset=UTF-8']
+        );
+    }
+});
+
 $shopPattern = '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$';
 
 Route::prefix('{shop}')
@@ -68,8 +87,8 @@ Route::prefix('{shop}')
         Route::get('/theme.css', ThemeCssController::class)->name('theme.css');
 
         Route::get('/catalog', [CatalogController::class, 'index'])->name('catalog.index');
-        Route::get('/catalog/{category:slug}', [CatalogController::class, 'category'])->name('catalog.category');
-        Route::get('/product/{product:slug}', [ProductController::class, 'show'])->name('product.show');
+        Route::get('/catalog/{categorySlug}', [CatalogController::class, 'category'])->name('catalog.category');
+        Route::get('/product/{productSlug}', [ProductController::class, 'show'])->name('product.show');
 
         Route::get('/cart', [CartController::class, 'index'])->name('cart.index');
         Route::post('/cart/add', [CartController::class, 'add'])->name('cart.add');
