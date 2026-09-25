@@ -43,7 +43,9 @@ class OrderResource extends Resource
                             ->disabled(),
                         Forms\Components\TextInput::make('total')
                             ->label('Сумма')
-                            ->money('RUB')
+                            ->numeric()
+                            ->prefix('₽')
+                            ->step(0.01)
                             ->disabled(),
                         Forms\Components\TextInput::make('placed_at')
                             ->label('Дата заказа')

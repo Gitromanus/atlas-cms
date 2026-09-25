@@ -147,6 +147,53 @@ class ShopFlowTest extends TestCase
         $this->assertNotNull($order->ext_id);
     }
 
+    public function test_guest_checkout_creates_customer_profile(): void
+    {
+        $tenant = $this->makeTenant('guestshop', 'guestshop');
+        app(TenantContext::class)->set($tenant);
+
+        OrderStatus::query()->create([
+            'tenant_id' => $tenant->id,
+            'name' => 'Новый',
+            'code' => 'new',
+            'is_system' => true,
+        ]);
+
+        $product = $this->makeProduct($tenant, 'SKU-G', 900, 5);
+
+        $cart = app(CartService::class);
+        $cart->add($product, 1);
+
+        // Гость без входа в личный кабинет оформляет заказ
+        $order = app(OrderService::class)->create([
+            'name' => 'Гость Гостевич',
+            'phone' => '+7 900 111-22-33',
+            'email' => 'guest@example.com',
+            'delivery_method' => 'pickup',
+            'payment_method' => 'cash',
+        ]);
+
+        $this->assertNotNull($order->customer_id, 'У заказа гостя должен появиться customer_id');
+        $this->assertDatabaseHas('customers', [
+            'tenant_id' => $tenant->id,
+            'email' => 'guest@example.com',
+            'phone' => '+7 900 111-22-33',
+        ]);
+
+        // Повторный заказ тем же email — покупатель не дублируется
+        $cart->add($product, 1);
+        $second = app(OrderService::class)->create([
+            'name' => 'Гость Гостевич',
+            'phone' => '+7 900 111-22-33',
+            'email' => 'guest@example.com',
+            'delivery_method' => 'pickup',
+            'payment_method' => 'cash',
+        ]);
+
+        $this->assertEquals($order->customer_id, $second->customer_id);
+        $this->assertSame(1, Customer::query()->where('email', 'guest@example.com')->count());
+    }
+
     public function test_entrepreneur_can_create_shop_self_service(): void
     {
         // Предприниматель сам создаёт магазин через публичную форму
