@@ -36,19 +36,24 @@ class ShopSettings extends Page implements HasForms
 
     public function mount(): void
     {
-        $tenant = $this->tenant();
-        $settings = $tenant->settings ?? [];
+        $this->fillFromTenant();
+    }
+
+    protected function fillFromTenant(): void
+    {
+        $tenant = $this->tenant()->refresh();
+        $settings = is_array($tenant->settings) ? $tenant->settings : [];
 
         $this->form->fill([
             'name' => $tenant->name,
             'slug' => $tenant->slug,
             'theme_id' => $tenant->theme_id,
-            'is_active' => $tenant->is_active,
-            'phone' => $settings['phone'] ?? '',
-            'email' => $settings['email'] ?? '',
-            'address' => $settings['address'] ?? '',
-            'hours' => $settings['hours'] ?? '',
-            'about' => $settings['about'] ?? '',
+            'is_active' => (bool) $tenant->is_active,
+            'phone' => (string) ($settings['phone'] ?? ''),
+            'email' => (string) ($settings['email'] ?? ''),
+            'address' => (string) ($settings['address'] ?? ''),
+            'hours' => (string) ($settings['hours'] ?? ''),
+            'about' => (string) ($settings['about'] ?? ''),
             'min_order_sum' => $settings['min_order_sum'] ?? null,
         ]);
     }
@@ -71,7 +76,7 @@ class ShopSettings extends Page implements HasForms
                     ])
                     ->columns(2),
                 Section::make('Контакты для покупателей')
-                    ->description('Отображаются в шапке и подвале витрины.')
+                    ->description('Телефон и часы — в верхней полосе. Остальное — в подвале витрины.')
                     ->schema([
                         TextInput::make('phone')
                             ->label('Телефон')
@@ -91,17 +96,16 @@ class ShopSettings extends Page implements HasForms
                         Textarea::make('about')
                             ->label('О магазине (коротко)')
                             ->rows(3)
-                            ->columnSpanFull()
-                            ->helperText('Показывается на главной и в подвале.'),
+                            ->columnSpanFull(),
                         TextInput::make('min_order_sum')
                             ->label('Мин. сумма заказа, ₽')
                             ->numeric()
                             ->minValue(0)
-                            ->helperText('0 или пусто — без ограничения'),
+                            ->helperText('Пусто — без ограничения'),
                     ])
                     ->columns(2),
                 Section::make('Свой домен')
-                    ->description('Подключение собственного домена появится в следующем обновлении. Сейчас витрина открывается по адресу платформы с slug магазина.')
+                    ->description('Сейчас витрина: path платформы /{slug}. Свой домен — в следующем обновлении.')
                     ->schema([
                         Placeholder::make('custom_domain_hint')
                             ->label('Статус')
@@ -146,7 +150,7 @@ class ShopSettings extends Page implements HasForms
 
         return $domain
             ? 'Подключён: '.$domain
-            : 'Не подключён — витрина на path платформы (см. адрес выше).';
+            : 'Не подключён — витрина на path платформы.';
     }
 
     protected function exchangeUrl(): string
@@ -160,51 +164,44 @@ class ShopSettings extends Page implements HasForms
         $tenant = $this->tenant();
 
         $reserved = config('atlas.reserved_paths', []);
-        $slug = strtolower((string) ($data['slug'] ?? ''));
+        $slug = strtolower(trim((string) ($data['slug'] ?? '')));
 
         if (in_array($slug, $reserved, true)) {
-            Notification::make()
-                ->title('Slug «'.$slug.'» зарезервирован платформой')
-                ->danger()
-                ->send();
+            Notification::make()->title('Slug «'.$slug.'» зарезервирован')->danger()->send();
 
             return;
         }
 
-        $exists = Tenant::query()
-            ->where('slug', $slug)
-            ->where('id', '!=', $tenant->id)
-            ->exists();
-
-        if ($exists) {
-            Notification::make()
-                ->title('Адрес «'.$slug.'» уже занят другим магазином')
-                ->danger()
-                ->send();
+        if (Tenant::query()->where('slug', $slug)->where('id', '!=', $tenant->id)->exists()) {
+            Notification::make()->title('Адрес «'.$slug.'» уже занят')->danger()->send();
 
             return;
         }
 
-        $settings = $tenant->settings ?? [];
-        $settings['phone'] = trim((string) ($data['phone'] ?? '')) ?: null;
-        $settings['email'] = trim((string) ($data['email'] ?? '')) ?: null;
-        $settings['address'] = trim((string) ($data['address'] ?? '')) ?: null;
-        $settings['hours'] = trim((string) ($data['hours'] ?? '')) ?: null;
-        $settings['about'] = trim((string) ($data['about'] ?? '')) ?: null;
+        $settings = is_array($tenant->settings) ? $tenant->settings : [];
+        foreach (['phone', 'email', 'address', 'hours', 'about'] as $key) {
+            $val = trim((string) ($data[$key] ?? ''));
+            $settings[$key] = $val !== '' ? $val : null;
+        }
         $min = $data['min_order_sum'] ?? null;
-        $settings['min_order_sum'] = $min !== null && $min !== '' ? (float) $min : null;
+        $settings['min_order_sum'] = ($min !== null && $min !== '') ? (float) $min : null;
 
-        $tenant->update([
+        $tenant->forceFill([
             'name' => $data['name'],
             'slug' => $slug,
             'subdomain' => $slug,
             'theme_id' => $data['theme_id'] ?: null,
-            'is_active' => $data['is_active'] ?? false,
+            'is_active' => (bool) ($data['is_active'] ?? false),
             'settings' => $settings,
-        ]);
+        ])->save();
+
+        app(TenantContext::class)->set($tenant->fresh());
+
+        $this->fillFromTenant();
 
         Notification::make()
             ->title('Настройки сохранены')
+            ->body('Контакты появятся на витрине после обновления страницы.')
             ->success()
             ->send();
     }
@@ -217,7 +214,7 @@ class ShopSettings extends Page implements HasForms
                 ->submit('save'),
             Action::make('openStorefront')
                 ->label('Открыть витрину')
-                ->url(fn (): string => $this->tenant()->url())
+                ->url(fn (): string => $this->tenant()->fresh()->url())
                 ->openUrlInNewTab()
                 ->color('gray'),
         ];
