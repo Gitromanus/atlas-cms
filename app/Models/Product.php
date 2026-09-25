@@ -173,7 +173,7 @@ class Product extends Model
 
     public function mainImage(): HasOne
     {
-        return $this->hasOne(ProductImage::class)->orderBy('sort_order');
+        return $this->hasOne(ProductImage::class)->oldestOfMany('sort_order');
     }
 
     public function defaultPrice(): HasOne
