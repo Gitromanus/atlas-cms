@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Services\Cart\CartService;
 use App\Services\Orders\OrderService;
+use App\Services\Tenant\TenantContext;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -34,6 +35,13 @@ class CheckoutController extends Controller
     {
         if ($this->cart->count() === 0) {
             return redirect()->route('cart.index');
+        }
+
+        $minOrder = app(TenantContext::class)->current()?->setting('min_order_sum');
+        if ($minOrder !== null && (float) $minOrder > 0 && $this->cart->total() < (float) $minOrder) {
+            return redirect()
+                ->route('cart.index')
+                ->withErrors(['cart' => 'Минимальная сумма заказа — '.number_format((float) $minOrder, 0, ',', ' ').' ₽. Добавьте товары в корзину.']);
         }
 
         $validated = $request->validate([

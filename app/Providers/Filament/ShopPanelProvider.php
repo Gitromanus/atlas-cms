@@ -2,6 +2,8 @@
 
 namespace App\Providers\Filament;
 
+use App\Filament\Shop\Widgets\RecentOrders;
+use App\Filament\Shop\Widgets\ShopStats;
 use App\Http\Middleware\SetFilamentTenant;
 use App\Models\Tenant;
 use App\Services\Tenant\TenantContext;
@@ -23,9 +25,6 @@ use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 /**
  * Админ-панель предпринимателя (владельца магазина).
- *
- * Здесь владелец управляет СВОИМ магазином: каталог, заказы, покупатели,
- * настройки (тема, обмен с 1С). Данные изолированы тенантом.
  */
 class ShopPanelProvider extends PanelProvider
 {
@@ -39,9 +38,6 @@ class ShopPanelProvider extends PanelProvider
         );
     }
 
-    /**
-     * Ссылка на витрину текущего магазина владельца (/ {slug} ).
-     */
     protected function shopUrl(): string
     {
         $user = auth()->user();
@@ -72,7 +68,6 @@ class ShopPanelProvider extends PanelProvider
             return '#';
         }
 
-        // Явно path-витрина, без зависимости от кривого APP_URL
         return url('/'.$slug);
     }
 
@@ -96,7 +91,8 @@ class ShopPanelProvider extends PanelProvider
             ->discoverWidgets(in: app_path('Filament/Shop/Widgets'), for: 'App\Filament\Shop\Widgets')
             ->widgets([
                 Widgets\AccountWidget::class,
-                \App\Filament\Shop\Widgets\ShopStats::class,
+                ShopStats::class,
+                RecentOrders::class,
             ])
             ->middleware([
                 EncryptCookies::class,
