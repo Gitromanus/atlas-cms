@@ -85,7 +85,6 @@ class ShopFlowTest extends TestCase
         $this->makeProduct($tenantA, 'SKU-A', 100, 5);
         $this->makeProduct($tenantB, 'SKU-B', 200, 3);
 
-        // Контекст магазина B
         app(TenantContext::class)->set($tenantB);
 
         $products = Product::query()->pluck('sku')->all();
@@ -109,7 +108,6 @@ class ShopFlowTest extends TestCase
 
         $product = $this->makeProduct($tenant, 'SKU-1', 1500, 10);
 
-        // Авторизованный покупатель — корзина привязана к customer_id (без сессии)
         $customer = Customer::query()->create([
             'tenant_id' => $tenant->id,
             'name' => 'Иван Петров',
@@ -120,7 +118,6 @@ class ShopFlowTest extends TestCase
 
         $this->actingAs($customer, 'customers');
 
-        // Корзина
         $cart = app(CartService::class);
         $cart->add($product, 2);
         $this->assertSame(2, $cart->count());
@@ -140,10 +137,8 @@ class ShopFlowTest extends TestCase
         $this->assertCount(1, $order->items);
         $this->assertSame(2, $order->items->first()->quantity);
 
-        // Корзина текущей сессии очищена после заказа
         $this->assertSame(0, app(CartService::class)->count());
 
-        // Заказ получил ext_id (UUID для обмена с 1С)
         $this->assertNotNull($order->ext_id);
     }
 
@@ -164,7 +159,6 @@ class ShopFlowTest extends TestCase
         $cart = app(CartService::class);
         $cart->add($product, 1);
 
-        // Гость без входа в личный кабинет оформляет заказ
         $order = app(OrderService::class)->create([
             'name' => 'Гость Гостевич',
             'phone' => '+7 900 111-22-33',
@@ -177,10 +171,9 @@ class ShopFlowTest extends TestCase
         $this->assertDatabaseHas('customers', [
             'tenant_id' => $tenant->id,
             'email' => 'guest@example.com',
-            'phone' => '79001112233', // телефон нормализуется до цифр
+            'phone' => '79001112233',
         ]);
 
-        // Повторный заказ тем же email — покупатель не дублируется
         $cart->add($product, 1);
         $second = app(OrderService::class)->create([
             'name' => 'Гость Гостевич',
@@ -196,7 +189,6 @@ class ShopFlowTest extends TestCase
 
     public function test_entrepreneur_can_create_shop_self_service(): void
     {
-        // Предприниматель сам создаёт магазин через публичную форму
         $this->post('http://localhost/create-shop', [
             'shop_name' => 'Мой первый магазин',
             'name' => 'Пётр Иванов',
@@ -212,7 +204,6 @@ class ShopFlowTest extends TestCase
         $this->assertNotNull($tenant);
         $this->assertNotNull($tenant->subdomain);
 
-        // Системные статусы заказов созданы автоматически
         $this->assertSame(5, \App\Models\OrderStatus::query()
             ->where('tenant_id', $tenant->id)
             ->count());
@@ -223,14 +214,14 @@ class ShopFlowTest extends TestCase
         $tenant = $this->makeTenant('demo', 'demo');
         app(TenantContext::class)->set($tenant);
 
-        // Регистрация
-        $this->post('http://demo.atlascms.ru/register', [
+        // Path-based витрина: /{slug}/register
+        $this->post('/demo/register', [
             'name' => 'Мария',
             'phone' => '+7 911 111-11-11',
             'email' => 'maria@example.com',
             'password' => 'secret123',
             'password_confirmation' => 'secret123',
-        ])->assertRedirect(route('account.orders'));
+        ])->assertRedirect(route('account.orders', ['shop' => 'demo']));
 
         $this->assertDatabaseHas('customers', [
             'email' => 'maria@example.com',
@@ -241,8 +232,7 @@ class ShopFlowTest extends TestCase
         $this->assertSame($tenant->id, $customer->tenant_id);
         $this->assertSame('79111111111', $customer->phone, 'Телефон нормализуется при регистрации');
 
-        // Повторная регистрация того же пользователя отклоняется, а не падает с 500
-        $this->post('http://demo.atlascms.ru/register', [
+        $this->post('/demo/register', [
             'name' => 'Мария Дубль',
             'phone' => '+7 911 111-11-11',
             'email' => 'maria@example.com',
