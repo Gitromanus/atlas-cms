@@ -32,7 +32,16 @@ class CartController extends Controller
         ]);
 
         $product = Product::query()->active()->findOrFail($validated['product_id']);
-        $this->cart->add($product, $validated['quantity'] ?? 1, $validated['options'] ?? []);
+        $options = $validated['options'] ?? [];
+
+        // Для товара с вариантами комбинация характеристик должна реально существовать в 1С
+        if ($product->hasVariants() && $product->variantQuantity($options) === null) {
+            return back()
+                ->withErrors(['options' => 'Такого варианта товара нет в наличии'])
+                ->withInput();
+        }
+
+        $this->cart->add($product, $validated['quantity'] ?? 1, $options);
 
         return back()->with('status', 'Товар добавлен в корзину');
     }

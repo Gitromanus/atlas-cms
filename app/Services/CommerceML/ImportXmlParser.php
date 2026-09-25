@@ -236,18 +236,28 @@ class ImportXmlParser
 
         foreach ($features as $feature) {
             if ($feature['is_variant']) {
-                ProductFeature::query()->updateOrCreate(
-                    [
+                $existing = $this->findVariantFeature($product, $feature['name']);
+
+                if ($existing === null) {
+                    ProductFeature::query()->create([
                         'tenant_id' => $product->tenant_id,
                         'product_id' => $product->id,
                         'name' => $feature['name'],
-                    ],
-                    [
                         'value' => $feature['value'],
                         'is_variant' => true,
                         'options' => $feature['options'],
-                    ]
-                );
+                    ]);
+
+                    continue;
+                }
+
+                $existing->update([
+                    'is_variant' => true,
+                    'options' => array_values(array_unique(array_merge(
+                        $existing->options ?? [],
+                        $feature['options'] ?? []
+                    ))),
+                ]);
 
                 continue;
             }
@@ -329,5 +339,37 @@ class ImportXmlParser
         }
 
         return $dir.'/'.$fileName;
+    }
+
+    /**
+     * Вариантное свойство товара по имени. «Размер (Одежда)» и «Размер» считаются одним свойством,
+     * чтобы характеристики каталога и предложений (в 1С они могут называться по-разному) не дублировались.
+     */
+    protected function findVariantFeature(Product $product, string $name): ?ProductFeature
+    {
+        $feature = ProductFeature::query()
+            ->where('tenant_id', $product->tenant_id)
+            ->where('product_id', $product->id)
+            ->where('name', $name)
+            ->where('is_variant', true)
+            ->first();
+
+        if ($feature !== null) {
+            return $feature;
+        }
+
+        $base = $this->baseFeatureName($name);
+
+        return ProductFeature::query()
+            ->where('tenant_id', $product->tenant_id)
+            ->where('product_id', $product->id)
+            ->where('is_variant', true)
+            ->get()
+            ->first(fn (ProductFeature $existing): bool => $this->baseFeatureName($existing->name) === $base);
+    }
+
+    protected function baseFeatureName(string $name): string
+    {
+        return mb_strtolower(trim((string) preg_replace('/\s*\(.*\)$/', '', $name)));
     }
 }

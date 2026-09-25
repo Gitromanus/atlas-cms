@@ -402,6 +402,24 @@ XML;
         $this->assertNotNull($color);
         $this->assertTrue((bool) $color->is_variant);
         $this->assertSame(['Черный'], $color->options);
+
+        // Реальные варианты из предложений: только существующие комбинации с остатками
+        $variants = $product->variants()->orderBy('ext_id')->get();
+        $this->assertCount(2, $variants);
+        $this->assertSame(['44', '46'], array_values($variants->pluck('options.Размер (Одежда)')->toArray()));
+        $this->assertSame([20.0, 30.0], $variants->pluck('quantity')->map(fn ($q) => (float) $q)->toArray());
+
+        // Несуществующая комбинация (46, Синий) не должна продаваться
+        $this->assertNull($product->variantQuantity([
+            'Размер (Одежда)' => '46',
+            'Цвет (Одежда)' => 'Синий',
+        ]));
+
+        // Существующая комбинация (46, Черный) — остаток 30
+        $this->assertSame(30.0, $product->variantQuantity([
+            'Размер (Одежда)' => '46',
+            'Цвет (Одежда)' => 'Черный',
+        ]));
     }
 
     public function test_catalog_import_resolves_property_values_and_characteristics(): void

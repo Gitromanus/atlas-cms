@@ -47,32 +47,47 @@
                 <div class="mt-6 whitespace-pre-line text-slate-700">{!! nl2br(e($product->description)) !!}</div>
             @endif
 
-            @php $variants = $product->variantFeatures(); @endphp
+            @php
+                // Реальные варианты из 1С: только существующие комбинации характеристик
+                $variantCombos = $product->variants
+                    ->filter(fn ($v) => filled($v->options))
+                    ->map(fn ($v) => ['options' => $v->options, 'quantity' => (float) $v->quantity])
+                    ->values();
+
+                // Списки значений строятся из реальных комбинаций, а не из перекрёстного произведения
+                $variantSelects = [];
+                foreach ($product->variantFeatures() as $vf) {
+                    $values = $variantCombos->pluck('options.'.$vf->name)->filter()->unique()->values();
+                    if ($values->isNotEmpty()) {
+                        $variantSelects[] = ['name' => $vf->name, 'options' => $values->all()];
+                    }
+                }
+
+                $hasPicker = $variantSelects !== [] && $variantCombos->isNotEmpty();
+            @endphp
 
             <form method="POST" action="{{ route('cart.add') }}" class="mt-8">
                 @csrf
                 <input type="hidden" name="product_id" value="{{ $product->id }}">
 
-                @if ($variants->isNotEmpty())
-                    <div x-data="variantPicker(@js($variants->map(fn ($f) => [
-                        'name' => $f->name,
-                        'options' => $f->options ?: [$f->value],
-                        'default' => $f->value,
-                    ])->values()))" class="mb-6 space-y-4">
-                        <template x-for="(v, vi) in variants" :key="vi">
+                @if ($hasPicker)
+                    <div x-data="variantPicker(@js($variantSelects), @js($variantCombos))" class="mb-6 space-y-4">
+                        <template x-for="(v, vi) in selects" :key="vi">
                             <div>
                                 <span class="mb-1.5 block text-sm font-medium" x-text="v.name + ':'"></span>
                                 <div class="flex flex-wrap gap-2">
                                     <template x-for="opt in v.options" :key="opt">
                                         <button type="button"
                                                 @click="select(vi, opt)"
-                                                class="rounded-theme border px-4 py-1.5 text-sm transition"
-                                                :class="isSelected(vi, opt) ? 'border-primary bg-primary text-white' : 'border-slate-300 hover:bg-slate-50'"
+                                                :disabled="optionDisabled(vi, opt)"
+                                                class="rounded-theme border px-4 py-1.5 text-sm transition disabled:cursor-not-allowed"
+                                                :class="isSelected(vi, opt) ? 'border-primary bg-primary text-white' : (optionDisabled(vi, opt) ? 'border-slate-200 text-slate-300' : 'border-slate-300 hover:bg-slate-50')"
                                                 x-text="opt"></button>
                                     </template>
                                 </div>
                             </div>
                         </template>
+                        <p class="text-sm font-medium text-red-500" x-show="!isAvailable()" x-text="unavailableText()"></p>
                         <input type="hidden" name="options" :value="JSON.stringify(payload())">
                     </div>
                 @endif
@@ -84,19 +99,22 @@
                                class="w-16 border-x border-slate-200 py-2 text-center focus:outline-none">
                         <button type="button" @click="qty = Math.min(999, qty + 1)" class="px-3.5 py-2 text-lg leading-none text-slate-500 hover:bg-slate-100" aria-label="Увеличить количество">+</button>
                     </div>
-                    <button type="submit" class="flex-1 rounded-theme bg-primary px-5 py-2 font-semibold text-white hover:opacity-90">
+                    <button type="submit"
+                            @if ($hasPicker) :disabled="!isAvailable()" @endif
+                            class="flex-1 rounded-theme bg-primary px-5 py-2 font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
                         В корзину
                     </button>
                 </div>
             </form>
 
             <script>
-                function variantPicker(variants) {
+                function variantPicker(selects, combos) {
                     return {
-                        variants,
+                        selects,
+                        combos,
                         selected: {},
                         init() {
-                            this.variants.forEach((v, i) => { this.selected[i] = v.default; });
+                            this.selects.forEach((v, i) => { this.selected[i] = v.options[0]; });
                         },
                         select(index, value) {
                             this.selected[index] = value;
@@ -104,9 +122,34 @@
                         isSelected(index, value) {
                             return this.selected[index] === value;
                         },
+                        trySelection(index, value) {
+                            return { ...this.selected, [index]: value };
+                        },
+                        comboFor(sel) {
+                            const map = {};
+                            this.selects.forEach((v, i) => { map[v.name] = sel[i]; });
+                            return this.combos.find(c => this.selects.every(v => c.options[v.name] === map[v.name])) || null;
+                        },
+                        optionDisabled(index, value) {
+                            return this.comboFor(this.trySelection(index, value)) === null;
+                        },
+                        currentCombo() {
+                            return this.comboFor(this.selected);
+                        },
+                        isAvailable() {
+                            const c = this.currentCombo();
+                            return c !== null && Number(c.quantity) > 0;
+                        },
+                        unavailableText() {
+                            const c = this.currentCombo();
+                            if (c === null) {
+                                return 'Такого сочетания нет в наличии';
+                            }
+                            return 'Вариант закончился';
+                        },
                         payload() {
                             const out = {};
-                            this.variants.forEach((v, i) => { out[v.name] = this.selected[i]; });
+                            this.selects.forEach((v, i) => { out[v.name] = this.selected[i]; });
                             return out;
                         },
                     };

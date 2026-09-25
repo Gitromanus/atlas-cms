@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\ProductFeature;
 use App\Models\ProductPrice;
 use App\Models\ProductStock;
+use App\Models\ProductVariant;
 use App\Models\Warehouse;
 use App\Services\Tenant\TenantContext;
 use Illuminate\Support\Facades\DB;
@@ -143,6 +144,19 @@ class OffersXmlParser
 
         $tenantId = $product->tenant_id;
 
+        // Комбинация характеристик предложения (реальный вариант товара)
+        $variantOptions = [];
+        if (isset($offer->ХарактеристикиТовара->ХарактеристикаТовара)) {
+            foreach ($offer->ХарактеристикиТовара->ХарактеристикаТовара as $char) {
+                $charName = trim(XmlUtils::child($char, 'Наименование') ?? '');
+                $charValue = trim(XmlUtils::child($char, 'Значение') ?? '');
+
+                if ($charName !== '' && $charValue !== '') {
+                    $variantOptions[$charName] = $charValue;
+                }
+            }
+        }
+
         // Вариантные характеристики (цвет, размер) из предложений
         $this->syncVariantFeatures($product, $offer);
 
@@ -231,6 +245,22 @@ class OffersXmlParser
                 }
             }
         }
+
+        // Реальный вариант товара: комбинация характеристик с остатком и ценой.
+        // По нему витрина показывает только существующие сочетания (без «46, Синий»).
+        ProductVariant::query()->updateOrCreate(
+            [
+                'tenant_id' => $tenantId,
+                'product_id' => $product->id,
+                'ext_id' => $extId,
+            ],
+            [
+                'name' => XmlUtils::child($offer, 'Наименование'),
+                'options' => $variantOptions,
+                'quantity' => $stockRows !== [] ? array_sum($stockRows) : $quantityTotal,
+                'price' => $offerPrices !== [] ? max($offerPrices) : null,
+            ]
+        );
     }
 
     /**
@@ -252,11 +282,7 @@ class OffersXmlParser
                 continue;
             }
 
-            $feature = ProductFeature::query()
-                ->where('tenant_id', $product->tenant_id)
-                ->where('product_id', $product->id)
-                ->where('name', $name)
-                ->first();
+            $feature = $this->findVariantFeature($product, $name);
 
             if ($feature === null) {
                 ProductFeature::query()->create([
@@ -281,5 +307,37 @@ class OffersXmlParser
                 'options' => $options,
             ]);
         }
+    }
+
+    /**
+     * Вариантное свойство товара по имени. «Размер (Одежда)» и «Размер» считаются одним свойством,
+     * чтобы характеристики каталога и предложений (в 1С они могут называться по-разному) не дублировались.
+     */
+    protected function findVariantFeature(Product $product, string $name): ?ProductFeature
+    {
+        $feature = ProductFeature::query()
+            ->where('tenant_id', $product->tenant_id)
+            ->where('product_id', $product->id)
+            ->where('name', $name)
+            ->where('is_variant', true)
+            ->first();
+
+        if ($feature !== null) {
+            return $feature;
+        }
+
+        $base = $this->baseFeatureName($name);
+
+        return ProductFeature::query()
+            ->where('tenant_id', $product->tenant_id)
+            ->where('product_id', $product->id)
+            ->where('is_variant', true)
+            ->get()
+            ->first(fn (ProductFeature $existing): bool => $this->baseFeatureName($existing->name) === $base);
+    }
+
+    protected function baseFeatureName(string $name): string
+    {
+        return mb_strtolower(trim((string) preg_replace('/\s*\(.*\)$/', '', $name)));
     }
 }

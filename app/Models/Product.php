@@ -88,6 +88,62 @@ class Product extends Model
         return $this->features->where('is_variant', true)->values();
     }
 
+    /**
+     * Реальные варианты из 1С: комбинации характеристик с остатками.
+     */
+    public function variants(): HasMany
+    {
+        return $this->hasMany(ProductVariant::class);
+    }
+
+    /**
+     * Есть ли у товара варианты с характеристиками.
+     */
+    public function hasVariants(): bool
+    {
+        return $this->variants()->whereNotNull('options')->exists();
+    }
+
+    /**
+     * Остаток конкретного варианта (комбинации характеристик) или null, если такого варианта нет.
+     *
+     * @param  array<string, string>  $options
+     */
+    public function variantQuantity(array $options): ?float
+    {
+        if ($options === []) {
+            return null;
+        }
+
+        $normalized = $this->normalizeOptionsMap($options);
+
+        foreach ($this->variants as $variant) {
+            if ($this->normalizeOptionsMap($variant->options ?? []) == $normalized) {
+                return (float) $variant->quantity;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Нормализация карты «имя свойства → значение» для сравнения без учёта порядка ключей.
+     */
+    protected function normalizeOptionsMap(array $map): array
+    {
+        $result = [];
+
+        foreach ($map as $key => $value) {
+            if ($value !== null && $value !== '') {
+                $result[(string) $key] = (string) $value;
+            }
+        }
+
+        ksort($result);
+
+        return $result;
+    }
+
     public function prices(): HasMany
     {
         return $this->hasMany(ProductPrice::class);
