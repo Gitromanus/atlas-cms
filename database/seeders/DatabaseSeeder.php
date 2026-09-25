@@ -23,13 +23,11 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        // --- Тема по умолчанию -------------------------------------------
         $theme = Theme::query()->firstOrCreate(
             ['slug' => 'default'],
             ['name' => 'Default', 'version' => '1.0.0', 'description' => 'Базовая тема AtlasCMS']
         );
 
-        // --- Супер-админ платформы ----------------------------------------
         User::query()->firstOrCreate(
             ['email' => 'admin@atlascms.ru'],
             [
@@ -39,7 +37,6 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // --- Демонстрационный магазин -------------------------------------
         $tenant = Tenant::query()->firstOrCreate(
             ['slug' => 'demo'],
             [
@@ -99,7 +96,6 @@ class DatabaseSeeder extends Seeder
             $this->seedDemoCatalog($tenant);
         }
 
-        // Каталог для магазина test@test.ru / odeza-i-obuv (одежда и обувь)
         $this->call(FashionDemoSeeder::class);
     }
 
@@ -115,7 +111,7 @@ class DatabaseSeeder extends Seeder
         ]);
 
         $warehouse = Warehouse::query()
-            ->where('tenant_id' => $tenant->id)
+            ->where('tenant_id', $tenant->id)
             ->where('name', 'Основной склад')
             ->first();
 
