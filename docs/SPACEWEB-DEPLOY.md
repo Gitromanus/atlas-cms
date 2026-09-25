@@ -6,9 +6,10 @@
 ## 0. Автоматический деплой через GitHub Actions
 
 В репозитории есть workflow [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml):
-при push в `main` он собирает `vendor` и загружает проект по FTP в
-`public_html/` (для SpaceWeb это путь **относительно корня FTP-аккаунта**, который
-соответствует домашнему каталогу `/home/n/netesngmai`; порт 21).
+при push в `main` он собирает `vendor` и загружает проект по FTP в корень
+FTP-сессии (`server-dir: .`). Для SpaceWeb FTP-доступ сразу открывает каталог сайта
+(`/home/n/netesngmai/public_html`), поэтому файлы попадают прямо в `public_html`
+(порт 21).
 
 Секреты репозитория: `FTP_SERVER`, `FTP_USERNAME`, `FTP_PASSWORD`, `FTP_PORT` (опционально).
 

@@ -64,10 +64,11 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           port: ${{ secrets.FTP_PORT || '21' }}
-          # Путь ОТНОСИТЕЛЬНО корня FTP-аккаунта (для SpaceWeb корень FTP = домашний
-          # каталог /home/n/netesngmai). Абсолютный путь указывать нельзя — действие
-          # приклеит его поверх корня, и файлы попадут не туда.
-          server-dir: public_html/
+          # Проверено на хостинге: FTP-доступ SpaceWeb сразу открывает каталог сайта,
+          # т.е. корень FTP-сессии = /home/n/netesngmai/public_html.
+          # server-dir — это путь ОТНОСИТЕЛЬНО корня FTP-аккаунта, поэтому указываем «.»
+          # (иначе путь дублируется: public_html/public_html/...).
+          server-dir: .
 
           # Зеркальная синхронизация: файлы, которых нет в репозитории,
           # на сервере удаляются ТОЛЬКО если они не попали в exclude.
