@@ -89,11 +89,15 @@ class Post extends Model
 
     public function getCoverUrlAttribute(): ?string
     {
-        if (! $this->cover_path) {
+        $path = $this->cover_path;
+        if (is_array($path)) {
+            $path = $path[0] ?? null;
+        }
+        if (! $path) {
             return null;
         }
 
-        return asset('storage/'.ltrim($this->cover_path, '/'));
+        return asset('storage/'.ltrim((string) $path, '/'));
     }
 
     public function typeLabel(): string
