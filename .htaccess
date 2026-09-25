@@ -1,0 +1,30 @@
+# AtlasCMS: проект размещён в documentRoot (public_html на виртуальном хостинге).
+# Все запросы перенаправляются в подкаталог public/ (там лежит index.php Laravel).
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Запросы, уже идущие в public/, не трогаем
+    RewriteRule ^public(/|$) - [L,NC]
+
+    # Остальное — в public/
+    RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
+
+# ---------------------------------------------------------------------------
+# Защита служебных файлов и каталогов от прямого доступа через HTTP.
+# Проект лежит в корне сайта, поэтому без этого .env, storage, базы и код
+# были бы доступны по URL (например, /.env выдал бы пароль от БД).
+# ---------------------------------------------------------------------------
+
+# Скрытые файлы и чувствительные файлы проекта
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
+
+<FilesMatch "^(artisan|composer\.(json|lock)|package\.json|package-lock\.json|vite\.config\.js|phpunit\.xml|README\.md|LICENSE)$">
+    Require all denied
+</FilesMatch>
+
+# Служебные каталоги: 403 при обращении извне
+RedirectMatch 403 ^/(app|bootstrap|config|database|docs|resources|routes|storage|tests|vendor|log1c)(/|$)
