@@ -1,0 +1,91 @@
+# Деплой AtlasCMS на хостинг SpaceWeb по FTP.
+#
+# Секреты репозитория (Settings → Secrets and variables → Actions), ожидаемые имена:
+#   FTP_HOST      — адрес FTP-сервера (например, ftp.your-site.ru или IP)
+#   FTP_USERNAME  — логин FTP (например, netesngmai)
+#   FTP_PASSWORD  — пароль FTP
+#   FTP_PORT      — порт (для SpaceWeb обычно 21); если не задан, берётся 21
+#
+# Запускается автоматически при push в ветку main, а также вручную из вкладки Actions.
+# После деплоя НЕ стираются: .env, база данных, загруженные изображения (storage/app),
+# сессии и логи — их нужно настроить на сервере один раз.
+
+name: Deploy to SpaceWeb (FTP)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-spaceweb
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Сборка и загрузка по FTP
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout репозитория
+        uses: actions/checkout@v4
+
+      - name: Установка PHP 8.3
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, dom, xml, xmlwriter, sqlite3, pdo_sqlite, fileinfo, curl, zip, intl, bcmath
+          coverage: none
+          tools: composer:v2
+
+      - name: Кэш зависимостей Composer
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/composer
+          key: composer-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-
+
+      - name: Установка зависимостей (production, без dev-пакетов)
+        run: composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist --no-progress
+
+      - name: Предварительная проверка синтаксиса ключевых модулей
+        run: |
+          php -l app/Services/CommerceML/ImportXmlParser.php
+          php -l app/Services/CommerceML/OffersXmlParser.php
+          php -l app/Http/Controllers/Shop/CatalogController.php
+          php -l app/Models/Product.php
+
+      - name: Загрузка на SpaceWeb (FTP, порт 21)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          # Хост и учётные данные берём из секретов репозитория
+          server: ${{ secrets.FTP_HOST }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          port: ${{ secrets.FTP_PORT || '21' }}
+          protocol: ftp
+          server-dir: /home/n/netesngmai/public_html/
+
+          # Зеркальная синхронизация: файлы, которых нет в репозитории,
+          # на сервере удаляются ТОЛЬКО если они не попали в exclude.
+          dangerous-clean-slate: false
+          timeout: 1800000
+
+          # Что НЕ трогаем на сервере:
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/.env
+            **/.env.*
+            **/node_modules/**
+            **/node_modules/*/**
+            .github/**
+            tests/**
+            storage/app/**
+            storage/framework/**
+            storage/logs/**
+            database/*.sqlite*
+            database/*.sqlite-journal
+            bootstrap/cache/*.php
+            build/**
