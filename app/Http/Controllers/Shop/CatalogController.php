@@ -18,19 +18,18 @@ class CatalogController extends Controller
         return $this->render($request, null);
     }
 
-    public function category(Request $request, Category $category): View
+    public function category(Request $request, string $shop, string $categorySlug): View
     {
+        $category = Category::query()->where('slug', $categorySlug)->firstOrFail();
+
         return $this->render($request, $category);
     }
 
     protected function render(Request $request, ?Category $category): View
     {
-        // Дерево категорий со счётчиками товаров (включая подкатегории)
         $menuTree = Category::menuTree();
         $categories = collect($menuTree);
 
-        // Узел текущей категории из дерева — с загруженными детьми и счётчиками
-        // (для плиток подкатегорий на странице категории)
         $categoryNode = null;
         if ($category !== null) {
             $stack = collect($menuTree);
@@ -48,9 +47,8 @@ class CatalogController extends Controller
 
         $query = Product::query()
             ->active()
-            ->with(['mainImage', 'category', 'features', 'variants'])
+            ->with(['images', 'category', 'features', 'variants', 'prices'])
             ->when($category !== null, function ($q) use ($category) {
-                // Товары категории и всех её подкатегорий
                 $q->whereIn('category_id', $category->descendantIds());
             })
             ->when($request->filled('q'), function ($q) use ($request) {
@@ -62,11 +60,8 @@ class CatalogController extends Controller
                 });
             });
 
-        // Доступные фильтры по характеристикам — из товаров текущей выборки
-        // (чтобы не показывать фильтры, по которым нет товаров)
         $filterOptions = $this->featureFilters((clone $query)->pluck('id'));
 
-        // Применяем выбранные фильтры: AND между характеристиками, OR внутри значений
         $selectedFilters = $this->normalizeFilters($request->input('f', []));
 
         foreach ($selectedFilters as $name => $values) {
@@ -75,10 +70,8 @@ class CatalogController extends Controller
 
                 foreach ($values as $value) {
                     if ($isVariant) {
-                        // Вариантная характеристика (Цвет, Размер): значение из реальных комбинаций вариантов
                         $q->orWhereHas('variants', fn ($vq) => $vq->where('options->'.$name, $value));
                     } else {
-                        // Обычная характеристика (Пол, Тип): значение свойства товара
                         $q->orWhereHas('features', fn ($fq) => $fq->where('name', $name)->where('value', $value));
                     }
                 }
@@ -100,87 +93,70 @@ class CatalogController extends Controller
         ]);
     }
 
-    /**
-     * Сортировки как в интернет-магазинах:
-     * new (новинки), popular (популярность), price_asc/price_desc, name_asc/name_desc.
-     */
     protected function applySorting($query, string $sort): void
     {
-        switch ($sort) {
-            case 'popular':
-                // Популярность: суммарное количество в заказах (order_items), затем новинки
-                $sales = '(SELECT COALESCE(SUM(order_items.quantity), 0) FROM order_items WHERE order_items.product_id = products.id)';
-                $query->orderByRaw($sales.' DESC')->orderByDesc('id');
-                break;
-
-            case 'price_asc':
-            case 'price_desc':
-                // Цена: минимальная из типов цен или из вариантов (у товаров с вариантами цены только в вариантах)
-                $price = '(SELECT COALESCE(
-                    (SELECT MIN(price) FROM product_prices WHERE product_prices.product_id = products.id),
-                    (SELECT MIN(price) FROM product_variants WHERE product_variants.product_id = products.id)
-                ))';
-                // Товары без цены — в конец списка
-                $query->orderByRaw('(CASE WHEN '.$price.' IS NULL THEN 1 ELSE 0 END) ASC')
-                    ->orderByRaw($price.' '.($sort === 'price_asc' ? 'ASC' : 'DESC'))
-                    ->orderByDesc('id');
-                break;
-
-            case 'name_asc':
-                $query->orderBy('name')->orderBy('id');
-                break;
-
-            case 'name_desc':
-                $query->orderByDesc('name')->orderBy('id');
-                break;
-
-            case 'new':
-            default:
-                // Новинки — сначала последние добавленные
-                $query->orderByDesc('id');
-                break;
-        }
+        match ($sort) {
+            'price_asc' => $query->orderBy(
+                \App\Models\ProductPrice::query()
+                    ->select('price')
+                    ->whereColumn('product_prices.product_id', 'products.id')
+                    ->orderBy('price')
+                    ->limit(1)
+            ),
+            'price_desc' => $query->orderByDesc(
+                \App\Models\ProductPrice::query()
+                    ->select('price')
+                    ->whereColumn('product_prices.product_id', 'products.id')
+                    ->orderBy('price')
+                    ->limit(1)
+            ),
+            'name' => $query->orderBy('name'),
+            default => $query->latest(),
+        };
     }
 
     /**
-     * Нормализация выбранных фильтров: f[Характеристика][] = значение.
-     *
-     * @return array<string, array<int, string>>
+     * @param  mixed  $raw
+     * @return array<string, list<string>>
      */
-    protected function normalizeFilters(mixed $input): array
+    protected function normalizeFilters(mixed $raw): array
     {
-        if (! is_array($input)) {
+        if (! is_array($raw)) {
             return [];
         }
 
-        $result = [];
+        $out = [];
 
-        foreach ($input as $name => $values) {
-            $values = array_values(array_filter((array) $values, fn ($value): bool => filled($value)));
+        foreach ($raw as $name => $values) {
+            if (! is_string($name) || $name === '') {
+                continue;
+            }
 
-            if ($values !== []) {
-                $result[(string) $name] = array_map('strval', $values);
+            $list = is_array($values) ? $values : [$values];
+            $list = array_values(array_filter(array_map('strval', $list), fn ($v) => $v !== ''));
+
+            if ($list !== []) {
+                $out[$name] = $list;
             }
         }
 
-        return $result;
+        return $out;
     }
 
     /**
-     * Доступные для фильтрации характеристики и их значения по id товаров выборки.
-     *
-     * @param  Collection<int, int>  $productIds
-     * @return array<string, array{is_variant: bool, values: array<int, string>}>
+     * @param  \Illuminate\Support\Collection<int, int|string>|array<int, int|string>  $productIds
+     * @return array<string, array{is_variant: bool, values: list<string>}>
      */
-    protected function featureFilters(Collection $productIds): array
+    protected function featureFilters($productIds): array
     {
+        $productIds = collect($productIds)->filter()->values();
+
         if ($productIds->isEmpty()) {
             return [];
         }
 
         $filters = [];
 
-        // Обычные характеристики: значение берётся из product_features.value
         $features = ProductFeature::query()
             ->whereIn('product_id', $productIds)
             ->get();
@@ -201,7 +177,6 @@ class CatalogController extends Controller
             $filters[$name]['values'][$value] = true;
         }
 
-        // Вариантные характеристики: значения из реальных комбинаций вариантов
         $variants = ProductVariant::query()
             ->whereIn('product_id', $productIds)
             ->whereNotNull('options')
@@ -222,7 +197,6 @@ class CatalogController extends Controller
 
         foreach ($filters as $name => $data) {
             $values = array_keys($data['values']);
-
             usort($values, static fn (string $a, string $b): int => mb_strtolower($a) <=> mb_strtolower($b));
 
             $result[$name] = [
