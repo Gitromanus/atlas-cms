@@ -102,10 +102,12 @@ jobs:
               cd ~/public_html || exit 1
               unzip -o atlas.zip
               rm -f atlas.zip
+              # bootstrap/cache исключён из архива, но Laravel требует его наличия
+              mkdir -p bootstrap/cache
               mkdir -p storage/app/public storage/app/1c \
                        storage/framework/cache/data storage/framework/sessions \
                        storage/framework/views storage/logs
-              chmod -R 775 storage bootstrap/cache 2>/dev/null || true
+              chmod -R 775 storage bootstrap/cache
             '
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
