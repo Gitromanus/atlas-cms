@@ -22,17 +22,16 @@ class CatalogController extends Controller
 
     protected function render(Request $request, ?Category $category): View
     {
-        $categories = Category::query()
-            ->where('is_active', true)
-            ->whereNull('parent_id')
-            ->withCount('products')
-            ->orderBy('sort_order')
-            ->get();
+        // Дерево категорий со счётчиками товаров (включая подкатегории)
+        $categories = collect(Category::menuTree());
 
         $products = Product::query()
             ->active()
             ->with(['mainImage', 'category'])
-            ->when($category !== null, fn ($q) => $q->where('category_id', $category->id))
+            ->when($category !== null, function ($q) use ($category) {
+                // Товары категории и всех её подкатегорий
+                $q->whereIn('category_id', $category->descendantIds());
+            })
             ->when($request->has('q'), function ($q) use ($request) {
                 $q->where(function ($query) use ($request) {
                     $search = $request->string('q')->trim()->toString();

@@ -65,6 +65,8 @@ class ShopPanelProvider extends PanelProvider
             ->colors([
                 'primary' => Color::Indigo,
             ])
+            // Тёмная тема панели (по системным настройкам) — согласуется с тёмными темами витрин
+            ->darkMode(true)
             ->discoverResources(in: app_path('Filament/Shop/Resources'), for: 'App\\Filament\\Shop\\Resources')
             ->discoverPages(in: app_path('Filament/Shop/Pages'), for: 'App\\Filament\\Shop\\Pages')
             ->pages([

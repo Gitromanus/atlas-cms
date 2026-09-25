@@ -20,8 +20,7 @@ class ExchangeLogResource extends Resource
 
     protected static ?string $pluralModelLabel = 'обмен с 1С';
 
-    // Журнал обмена доступен в «Настройках магазина», отдельный пункт меню не нужен
-    protected static bool $shouldRegisterNavigation = false;
+    protected static bool $shouldRegisterNavigation = true;
 
     public static function table(Table $table): Table
     {

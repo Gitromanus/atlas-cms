@@ -6,7 +6,7 @@
     <h1 class="mb-6 text-3xl font-bold">{{ $category?->name ?? 'Каталог товаров' }}</h1>
 
     @if ($categories->isNotEmpty())
-        <nav class="mb-8 flex flex-wrap gap-2">
+        <nav class="mb-6 flex flex-wrap gap-2">
             <a href="{{ route('catalog.index') }}"
                class="rounded-theme px-4 py-2 text-sm @if (! $category) bg-primary text-white @else bg-white text-slate-700 hover:bg-slate-100 @endif">
                 Все товары
@@ -14,10 +14,22 @@
             @foreach ($categories as $cat)
                 <a href="{{ route('catalog.category', $cat->slug ?: $cat->id) }}"
                    class="rounded-theme px-4 py-2 text-sm @if ($category?->id === $cat->id) bg-primary text-white @else bg-white text-slate-700 hover:bg-slate-100 @endif">
-                    {{ $cat->name }} ({{ $cat->products_count }})
+                    {{ $cat->name }} ({{ $cat->products_count_total ?? $cat->products_count ?? 0 }})
                 </a>
             @endforeach
         </nav>
+    @endif
+
+    @if ($category !== null && filled($category->children ?? null) && $category->children->isNotEmpty())
+        <div class="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            @foreach ($category->children as $child)
+                <a href="{{ route('catalog.category', $child->slug ?: $child->id) }}"
+                   class="rounded-theme border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 transition hover:border-primary hover:bg-slate-50">
+                    <span class="font-medium">{{ $child->name }}</span>
+                    <span class="block text-xs text-slate-400">{{ $child->products_count_total ?? $child->products_count ?? 0 }} тов.</span>
+                </a>
+            @endforeach
+        </div>
     @endif
 
     <form method="GET" class="mb-8 flex max-w-md gap-2">

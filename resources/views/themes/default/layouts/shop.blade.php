@@ -27,6 +27,7 @@
         }
     </script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>[x-cloak]{display:none!important}</style>
     @stack('head')
 </head>
 <body class="min-h-screen bg-slate-50 text-slate-800 antialiased">
@@ -44,7 +45,21 @@
 
         <nav class="hidden items-center gap-6 md:flex">
             <a href="{{ route('home') }}" class="hover:text-primary">Главная</a>
-            <a href="{{ route('catalog.index') }}" class="hover:text-primary">Каталог</a>
+
+            @php($categoryMenu = \App\Models\Category::menuTree())
+            <div class="relative" x-data="{ open: false }" @mouseenter="open = true" @mouseleave="open = false">
+                <a href="{{ route('catalog.index') }}" class="inline-flex items-center gap-1 hover:text-primary">
+                    Каталог
+                    <svg class="h-3 w-3 transition" :class="open ? 'rotate-180' : ''" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
+                </a>
+                <div x-show="open" x-cloak x-transition.opacity
+                     class="absolute left-0 top-full z-50 mt-2 min-w-60 rounded-theme border border-slate-200 bg-white py-1 shadow-lg">
+                    <a href="{{ route('catalog.index') }}" class="block px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">Все товары</a>
+                    @if (! empty($categoryMenu))
+                        @include('shop.partials.category-menu', ['categories' => collect($categoryMenu)])
+                    @endif
+                </div>
+            </div>
             <a href="{{ route('cart.index') }}" class="relative hover:text-primary">
                 Корзина
                 @if (\App\Services\Cart\CartService::class && app()->bound(\App\Services\Cart\CartService::class))

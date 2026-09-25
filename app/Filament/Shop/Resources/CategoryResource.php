@@ -67,7 +67,9 @@ class CategoryResource extends Resource
             ->reorderable('sort_order')
             ->defaultSort('sort_order')
             ->actions([
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\EditAction::make()
+                    ->modal()
+                    ->slideOver(),
                 Tables\Actions\DeleteAction::make(),
             ])
             ->bulkActions([

@@ -13,7 +13,13 @@ class ListProducts extends ListRecords
     protected function getHeaderActions(): array
     {
         return [
-            Actions\CreateAction::make(),
+            // Создание товара без ухода со списка
+            Actions\CreateAction::make()
+                ->modal()
+                ->slideOver()
+                ->after(function (\App\Models\Product $record, array $data): void {
+                    \App\Filament\Shop\Resources\ProductResource::storeNewImages($record, $data['new_images'] ?? []);
+                }),
         ];
     }
 }

@@ -4,6 +4,7 @@ namespace App\Filament\Shop\Resources;
 
 use App\Filament\Shop\Resources\ProductResource\Pages;
 use App\Models\Product;
+use App\Models\ProductImage;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -178,6 +179,32 @@ class ProductResource extends Resource
             ]);
     }
 
+    /**
+     * Сохраняет вновь загруженные изображения (FileUpload уже положил файлы на диск).
+     * Вызывается из модальных действий и страниц ресурса.
+     *
+     * @param  array<int, string>  $paths
+     */
+    public static function storeNewImages(Product $product, array $paths): void
+    {
+        if ($paths === []) {
+            return;
+        }
+
+        $startOrder = ((int) $product->images()->max('sort_order')) + 1;
+
+        foreach ($paths as $index => $path) {
+            ProductImage::query()->create([
+                'tenant_id' => $product->tenant_id,
+                'product_id' => $product->id,
+                'path' => $path,
+                'url' => null,
+                'source' => 'manual',
+                'sort_order' => $startOrder + $index,
+            ]);
+        }
+    }
+
     protected static function tenantSlug(): string
     {
         return app(\App\Services\Tenant\TenantContext::class)->current()?->slug ?? 'common';
@@ -217,7 +244,11 @@ class ProductResource extends Resource
                     ->relationship('category', 'name'),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
+                // Редактирование в модальном окне — не нужно возвращаться из отдельной страницы
+                Tables\Actions\EditAction::make()
+                    ->modal()
+                    ->slideOver()
+                    ->after(fn (Product $record, array $data): mixed => self::storeNewImages($record, $data['new_images'] ?? [])),
                 Tables\Actions\DeleteAction::make(),
             ])
             ->bulkActions([

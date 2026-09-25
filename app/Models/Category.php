@@ -76,4 +76,82 @@ class Category extends Model
     {
         return $this->hasMany(Product::class);
     }
+
+    /**
+     * Дерево активных категорий магазина для меню витрины.
+     *
+     * Каждый узел получает products_count_total — количество товаров
+     * в категории вместе со всеми подкатегориями.
+     *
+     * @return array<int, Category>
+     */
+    public static function menuTree(): array
+    {
+        $tenantId = app(TenantContext::class)->id();
+
+        if ($tenantId === null) {
+            return [];
+        }
+
+        $categories = static::query()
+            ->where('tenant_id', $tenantId)
+            ->where('is_active', true)
+            ->withCount('products')
+            ->orderBy('sort_order')
+            ->get()
+            ->keyBy('id');
+
+        $roots = [];
+
+        foreach ($categories as $category) {
+            if ($category->parent_id !== null && $categories->has($category->parent_id)) {
+                $children = $categories[$category->parent_id]->children ?? collect();
+                $categories[$category->parent_id]->setRelation('children', $children->push($category));
+            } else {
+                $roots[] = $category;
+            }
+        }
+
+        $countRecursive = function (self $node) use (&$countRecursive): int {
+            $total = (int) $node->products_count;
+
+            foreach ($node->children ?? [] as $child) {
+                $total += $countRecursive($child);
+            }
+
+            $node->products_count_total = $total;
+
+            return $total;
+        };
+
+        foreach ($roots as $root) {
+            $countRecursive($root);
+        }
+
+        return $roots;
+    }
+
+    /**
+     * Идентификаторы категории и всех её подкатегорий (для фильтра товаров).
+     *
+     * @return array<int, int>
+     */
+    public function descendantIds(): array
+    {
+        $ids = [$this->id];
+
+        $stack = $this->children()->where('is_active', true)->get();
+
+        while ($stack->isNotEmpty()) {
+            $levelIds = $stack->pluck('id')->all();
+            $ids = array_merge($ids, $levelIds);
+
+            $stack = Category::query()
+                ->whereIn('parent_id', $levelIds)
+                ->where('is_active', true)
+                ->get();
+        }
+
+        return $ids;
+    }
 }

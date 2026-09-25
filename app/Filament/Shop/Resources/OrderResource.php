@@ -5,6 +5,7 @@ namespace App\Filament\Shop\Resources;
 use App\Filament\Shop\Resources\OrderResource\Pages;
 use App\Filament\Shop\Resources\OrderResource\RelationManagers\OrderItemsRelationManager;
 use App\Models\Order;
+use App\Models\OrderStatus;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -128,6 +129,21 @@ class OrderResource extends Resource
                     ->label('Передан в 1С'),
             ])
             ->actions([
+                // Быстрая смена статуса в модальном окне
+                Tables\Actions\Action::make('changeStatus')
+                    ->label('Статус')
+                    ->icon('heroicon-m-arrow-path')
+                    ->color('gray')
+                    ->form([
+                        Forms\Components\Select::make('status_id')
+                            ->label('Статус заказа')
+                            ->options(OrderStatus::query()->pluck('name', 'id'))
+                            ->default(fn (Order $record): ?int => $record->status_id)
+                            ->required(),
+                    ])
+                    ->action(function (Order $record, array $data): void {
+                        $record->update(['status_id' => $data['status_id']]);
+                    }),
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
             ])

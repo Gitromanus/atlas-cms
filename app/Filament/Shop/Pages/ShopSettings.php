@@ -2,7 +2,6 @@
 
 namespace App\Filament\Shop\Pages;
 
-use App\Models\ExchangeLog;
 use App\Models\Tenant;
 use App\Models\Theme;
 use Filament\Actions\Action;
@@ -68,12 +67,11 @@ class ShopSettings extends Page implements HasForms
                             ->content(fn () => $this->tenant()->owner?->email ?? '— владелец не создан'),
                     ]),
                 Section::make('Журнал обмена с 1С')
-                    ->description('Последние операции обмена: товары, цены, остатки и заказы')
+                    ->description('Полный журнал операций: товары, цены, остатки и заказы')
                     ->schema([
-                        \Filament\Forms\Components\View::make('filament.shop.pages.partials.exchange-log')
-                            ->viewData([
-                                'logs' => ExchangeLog::query()->latest()->limit(15)->get(),
-                            ]),
+                        Placeholder::make('exchange_log_link')
+                            ->label('Журнал обмена')
+                            ->content(fn () => '<a href="'.url('/shop/exchange-logs').'" class="font-medium text-primary-600 hover:underline">Открыть журнал обмена →</a>'),
                     ]),
             ])
             ->statePath('data');
