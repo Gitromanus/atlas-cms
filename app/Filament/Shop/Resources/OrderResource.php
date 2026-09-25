@@ -92,7 +92,6 @@ class OrderResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
-            // Без перехода на страницу редактирования по клику на строку — правки в модальном окне
             ->recordUrl(null)
             ->defaultSort('id', 'desc')
             ->columns([
@@ -136,13 +135,11 @@ class OrderResource extends Resource
                     ->label('Передан в 1С'),
             ])
             ->actions([
-                // Полная страница заказа: состав позиций, история, детали
                 Tables\Actions\Action::make('open')
                     ->label('Открыть')
                     ->icon('heroicon-m-arrow-top-right-on-square')
                     ->color('gray')
                     ->url(fn (Order $record): string => static::getUrl('edit', ['record' => $record])),
-                // Быстрая смена статуса в модальном окне
                 Tables\Actions\Action::make('changeStatus')
                     ->label('Статус')
                     ->icon('heroicon-m-arrow-path')
@@ -158,7 +155,6 @@ class OrderResource extends Resource
                         $record->update(['status_id' => $data['status_id']]);
                     }),
                 Tables\Actions\EditAction::make()
-                    // Редактирование в модальном окне — не уводим на отдельную страницу
                     ->url(null)
                     ->modal()
                     ->slideOver(),
@@ -169,6 +165,19 @@ class OrderResource extends Resource
                     Tables\Actions\DeleteBulkAction::make(),
                 ]),
             ]);
+    }
+
+    public static function getNavigationBadge(): ?string
+    {
+        $newIds = OrderStatus::query()->whereIn('name', ['Новый'])->pluck('id');
+        $count = static::getEloquentQuery()->whereIn('status_id', $newIds)->count();
+
+        return $count > 0 ? (string) $count : null;
+    }
+
+    public static function getNavigationBadgeColor(): ?string
+    {
+        return 'warning';
     }
 
     public static function getRelations(): array
