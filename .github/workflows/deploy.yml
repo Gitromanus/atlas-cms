@@ -60,7 +60,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq sshpass
 
-      - name: Загрузка атлас.zip по SCP
+      - name: Загрузка atlas.zip по SCP
         run: |
           sshpass -p "$SSH_PASSWORD" scp -P "$SSH_PORT" -o StrictHostKeyChecking=no \
             deploy/atlas.zip "$SSH_USERNAME@$SSH_HOST:public_html/atlas.zip"
@@ -84,10 +84,11 @@ jobs:
                        storage/framework/views storage/logs
               chmod -R 775 storage bootstrap/cache
               mkdir -p public
-              # Симлинк: /public/storage → storage/app/public (картинки товаров)
               rm -rf public/storage
               ln -sfn ../storage/app/public public/storage
               ls -la public/storage
+              rm -rf storage/framework/views/* 2>/dev/null || true
+              echo "blade cache cleared after unzip"
             '
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
@@ -102,42 +103,8 @@ jobs:
               "$SSH_USERNAME@$SSH_HOST" "cat > ~/public_html/.env" < deploy/.env
             echo ".env обновлён на сервере из ENV_CONTENT"
           else
-            echo "ENV_CONTENT не задан — .env на сервере не меняется"
+            echo "deploy/.env нет — пропускаем"
           fi
-        env:
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
-          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
-          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
-
-      - name: Диагностика подключения к MySQL (из .env на сервере)
-        run: |
-          PHP_CODE=$(cat <<'PHP'
-          <?php
-          $lines = file('.env'); $env = [];
-          foreach ($lines as $l) {
-              $l = trim($l);
-              if (str_starts_with($l, 'DB_') && str_contains($l, '=')) {
-                  [$k, $v] = explode('=', $l, 2);
-                  $env[$k] = trim($v);
-              }
-          }
-          echo 'PWD_LEN=' . strlen($env['DB_PASSWORD'] ?? '') . "\n";
-          try {
-              new PDO(
-                  'mysql:host=' . ($env['DB_HOST'] ?? '') . ';port=' . ($env['DB_PORT'] ?? '3306') . ';dbname=' . ($env['DB_DATABASE'] ?? ''),
-                  $env['DB_USERNAME'] ?? '',
-                  $env['DB_PASSWORD'] ?? ''
-              );
-              echo "MYSQL_OK\n";
-          } catch (Throwable $t) {
-              echo 'MYSQL_ERR: ' . $t->getMessage() . "\n";
-          }
-          PHP
-          )
-          B64=$(printf '%s' "$PHP_CODE" | base64 -w0)
-          sshpass -p "$SSH_PASSWORD" ssh -p "$SSH_PORT" -o StrictHostKeyChecking=no \
-            "$SSH_USERNAME@$SSH_HOST" "cd ~/public_html && echo $B64 | base64 -d > _dbcheck.php && php8.3 _dbcheck.php; rm -f _dbcheck.php"
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
@@ -168,6 +135,9 @@ jobs:
               grep -E "^DB_(CONNECTION|HOST|PORT|DATABASE|USERNAME)=" .env || true
 
               "$PHP_BIN" artisan storage:link 2>/dev/null || ln -sfn ../storage/app/public public/storage
+              rm -rf storage/framework/views/* || true
+              "$PHP_BIN" artisan view:clear 2>/dev/null || true
+              "$PHP_BIN" artisan cache:clear 2>/dev/null || true
               "$PHP_BIN" artisan migrate --force
               "$PHP_BIN" artisan db:seed --force
               "$PHP_BIN" artisan db:seed --class=Database\\Seeders\\FashionDemoSeeder --force
@@ -185,4 +155,11 @@ jobs:
           echo "HTTP ${STATUS} для ${SITE_URL}/"
           if [ "$STATUS" = "000" ] || [ "$STATUS" = "500" ]; then
             echo "::warning::Сайт вернул ${STATUS} — проверьте .env на сервере и доступность БД MySQL"
+          fi
+          # Проверка, что новый layout задеплоился
+          BODY=$(curl -sS --max-time 60 "${SITE_URL}/odeza-i-obuv" || true)
+          if echo "$BODY" | grep -q "Покупателям"; then
+            echo "OK: footer contacts layout present"
+          else
+            echo "::warning::На витрине нет блока Покупателям — возможен старый layout/cache"
           fi
