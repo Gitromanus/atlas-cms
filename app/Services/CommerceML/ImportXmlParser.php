@@ -57,11 +57,14 @@ class ImportXmlParser
 
                     $properties[$id] = XmlUtils::child($property, 'Наименование') ?? $id;
 
-                    if (isset($property->ВариантыЗначений->ВариантЗначения)) {
+                    if (isset($property->ВариантыЗначений)) {
                         $values = [];
                         $names = [];
-                        foreach ($property->ВариантыЗначений->ВариантЗначения as $option) {
-                            $optionId = XmlUtils::child($option, 'Ид');
+
+                        foreach ($property->ВариантыЗначений->children() as $option) {
+                            // Стандарт CommerceML: <ВариантЗначения><Ид>…</Ид><Значение>…</Значение>
+                            // УТ 1С пользователя:   <Справочник><ИдЗначения>…</ИдЗначения><Значение>…</Значение>
+                            $optionId = XmlUtils::child($option, 'Ид') ?? XmlUtils::child($option, 'ИдЗначения');
                             $value = XmlUtils::child($option, 'Значение');
 
                             if ($value === null || $value === '') {

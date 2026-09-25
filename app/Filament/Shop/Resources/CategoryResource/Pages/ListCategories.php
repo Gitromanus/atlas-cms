@@ -14,6 +14,8 @@ class ListCategories extends ListRecords
     {
         return [
             Actions\CreateAction::make()
+                // Явно отключаем URL страницы создания, иначе действие станет ссылкой, а не модалом
+                ->url(null)
                 ->modal()
                 ->slideOver(),
         ];

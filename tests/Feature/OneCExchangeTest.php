@@ -11,6 +11,7 @@ use App\Models\Tenant;
 use App\Models\Theme;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Services\CommerceML\XmlUtils;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Hash;
@@ -211,6 +212,11 @@ XML;
         $this->assertSame('ART-001', $product->sku);
         $this->assertSame('Телефон Atlas', $product->name);
         $this->assertSame('Штука', $product->unit);
+
+        // Товар должен быть привязан к категории из <Группы><Ид> (реальная структура УТ 1С)
+        $category = Category::query()->where('ext_id', 'cat-1')->first();
+        $this->assertNotNull($category);
+        $this->assertEquals($category->id, $product->category_id, 'Товар должен получить category_id из выгрузки');
 
         $this->assertDatabaseHas('product_features', [
             'product_id' => $product->id,
@@ -515,5 +521,20 @@ XML;
         $this->assertSame('M', $size->value);
         $this->assertTrue($size->is_variant);
         $this->assertSame(['M', 'L'], $size->options);
+    }
+
+    public function test_xml_utils_ids_supports_direct_and_nested_id(): void
+    {
+        // Реальная структура УТ 1С в товарах: <Группы><Ид>GUID</Ид></Группы>
+        $product = simplexml_load_string('<Товар><Группы><Ид>aaa</Ид></Группы></Товар>');
+        $this->assertSame(['aaa'], XmlUtils::ids($product, 'Группы'));
+
+        // Структура классификатора: <Группы><Группа><Ид>GUID</Ид></Группа></Группы>
+        $classifier = simplexml_load_string('<Классификатор><Группы><Группа><Ид>bbb</Ид></Группа></Группы></Классификатор>');
+        $this->assertSame(['bbb'], XmlUtils::ids($classifier, 'Группы'));
+
+        // Без контейнера — пустой список
+        $empty = simplexml_load_string('<Товар><Ид>xxx</Ид></Товар>');
+        $this->assertSame([], XmlUtils::ids($empty, 'Группы'));
     }
 }

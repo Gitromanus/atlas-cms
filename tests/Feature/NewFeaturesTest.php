@@ -151,4 +151,36 @@ class NewFeaturesTest extends TestCase
         $this->assertNotNull($blueItem);
         $this->assertSame(['Цвет' => 'Синий', 'Размер' => 'L'], $blueItem->options);
     }
+
+    public function test_menu_tree_has_unique_children_and_counts_subcategories(): void
+    {
+        $tenant = $this->makeTenant('menutree');
+        app(TenantContext::class)->set($tenant);
+
+        $root = Category::query()->create(['tenant_id' => $tenant->id, 'name' => 'Корень']);
+        $child = Category::query()->create(['tenant_id' => $tenant->id, 'parent_id' => $root->id, 'name' => 'Ребёнок']);
+        Category::query()->create(['tenant_id' => $tenant->id, 'parent_id' => $child->id, 'name' => 'Внук']);
+
+        Product::query()->create(['tenant_id' => $tenant->id, 'category_id' => $child->id, 'name' => 'Товар 1']);
+        Product::query()->create(['tenant_id' => $tenant->id, 'category_id' => $child->id, 'name' => 'Товар 2']);
+
+        $tree = Category::menuTree();
+
+        $this->assertCount(1, $tree, 'В дереве один корень');
+        $this->assertSame(2, $tree[0]->products_count_total, 'Счётчик корня учитывает товары подкатегорий');
+
+        // Вложенные коллекции не должны дублировать категории
+        $walk = function (Category $node) use (&$walk): void {
+            $ids = $node->children->pluck('id')->all();
+            $this->assertSame(array_values(array_unique($ids)), $ids, 'Дети узла «'.$node->name.'» не должны дублироваться');
+
+            foreach ($node->children as $child) {
+                $walk($child);
+            }
+        };
+
+        foreach ($tree as $rootNode) {
+            $walk($rootNode);
+        }
+    }
 }

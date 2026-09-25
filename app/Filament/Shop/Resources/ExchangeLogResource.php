@@ -20,7 +20,7 @@ class ExchangeLogResource extends Resource
 
     protected static ?string $pluralModelLabel = 'обмен с 1С';
 
-    protected static bool $shouldRegisterNavigation = true;
+    protected static bool $shouldRegisterNavigation = false;
 
     public static function table(Table $table): Table
     {

@@ -213,6 +213,8 @@ class ProductResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            // Без перехода на страницу редактирования по клику на строку — редактирование в модале
+            ->recordUrl(null)
             ->columns([
                 Tables\Columns\TextColumn::make('name')
                     ->label('Название')
@@ -246,6 +248,8 @@ class ProductResource extends Resource
             ->actions([
                 // Редактирование в модальном окне — не нужно возвращаться из отдельной страницы
                 Tables\Actions\EditAction::make()
+                    // Явно отключаем URL страницы ресурса, иначе действие станет ссылкой, а не модалом
+                    ->url(null)
                     ->modal()
                     ->slideOver()
                     ->after(fn (Product $record, array $data): mixed => self::storeNewImages($record, $data['new_images'] ?? [])),

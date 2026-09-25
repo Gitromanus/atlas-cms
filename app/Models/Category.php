@@ -98,15 +98,23 @@ class Category extends Model
             ->where('is_active', true)
             ->withCount('products')
             ->orderBy('sort_order')
-            ->get()
-            ->keyBy('id');
+            ->orderBy('id')
+            ->get();
+
+        $byId = $categories->keyBy('id');
+
+        // Заранее инициализируем пустые коллекции детей, чтобы обращение
+        // ->children в цикле не выполняло отдельный SQL-запрос (это приводило
+        // к дублированию категорий в подменю).
+        foreach ($categories as $category) {
+            $category->setRelation('children', collect());
+        }
 
         $roots = [];
 
         foreach ($categories as $category) {
-            if ($category->parent_id !== null && $categories->has($category->parent_id)) {
-                $children = $categories[$category->parent_id]->children ?? collect();
-                $categories[$category->parent_id]->setRelation('children', $children->push($category));
+            if ($category->parent_id !== null && $byId->has($category->parent_id)) {
+                $byId[$category->parent_id]->children->push($category);
             } else {
                 $roots[] = $category;
             }
@@ -115,7 +123,7 @@ class Category extends Model
         $countRecursive = function (self $node) use (&$countRecursive): int {
             $total = (int) $node->products_count;
 
-            foreach ($node->children ?? [] as $child) {
+            foreach ($node->children as $child) {
                 $total += $countRecursive($child);
             }
 

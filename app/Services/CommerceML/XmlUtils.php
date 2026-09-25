@@ -49,19 +49,37 @@ class XmlUtils
     /**
      * Список Ид из контейнера (например, Группы → Ид).
      *
+     * Поддерживаются обе структуры CommerceML:
+     *  - <Группы><Ид>GUID</Ид></Группы> (товары УТ)
+     *  - <Группы><Группа><Ид>GUID</Ид></Группа></Группы> (классификатор)
+     *
      * @return array<int, string>
      */
     public static function ids(SimpleXMLElement $node, string $container): array
     {
         $ids = [];
 
-        if (isset($node->{$container})) {
-            foreach ($node->{$container}->children() as $item) {
-                $id = self::child($item, 'Ид');
+        if (! isset($node->{$container})) {
+            return $ids;
+        }
 
-                if ($id !== null) {
-                    $ids[] = $id;
+        foreach ($node->{$container}->children() as $item) {
+            // <Ид> лежит напрямую в контейнере: <Группы><Ид>GUID</Ид></Группы>
+            if ($item->getName() === 'Ид') {
+                $value = trim((string) $item);
+
+                if ($value !== '') {
+                    $ids[] = $value;
                 }
+
+                continue;
+            }
+
+            // <Ид> внутри дочернего элемента: <Группы><Группа><Ид>GUID</Ид></Группа></Группы>
+            $id = self::child($item, 'Ид');
+
+            if ($id !== null) {
+                $ids[] = $id;
             }
         }
 

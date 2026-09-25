@@ -15,6 +15,8 @@ class ListProducts extends ListRecords
         return [
             // Создание товара без ухода со списка
             Actions\CreateAction::make()
+                // Явно отключаем URL страницы создания, иначе действие станет ссылкой, а не модалом
+                ->url(null)
                 ->modal()
                 ->slideOver()
                 ->after(function (\App\Models\Product $record, array $data): void {
