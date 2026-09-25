@@ -1,26 +1,3 @@
-# Деплой AtlasCMS на SpaceWeb через SSH + архив.
-#
-# Проект содержит тысячи файлов vendor/, которые не успевают загрузиться по
-# одному файлу через FTP в лимит времени. Поэтому CI:
-#   1) собирает единый архив atlas.zip (scripts/build-archive.php);
-#   2) заливает его по SCP (SSH) — один файл;
-#   3) распаковывает на сервере через unzip (SSH);
-#   4) создаёт .env, если его ещё нет (из секрета ENV_CONTENT);
-#   5) выполняет миграции и базовый сид: php artisan migrate --force / db:seed --force.
-#
-# Секреты репозитория (Settings → Secrets and variables → Actions):
-#   SSH_HOST      — хост SSH (например, 77.222.40.198)
-#   SSH_USERNAME  — логин SSH (например, netesngmai)
-#   SSH_PASSWORD  — пароль SSH
-#   SSH_PORT      — порт SSH (по умолчанию 22)
-#   ENV_CONTENT   — (опционально) полное содержимое .env; пишется на сервер
-#                   ТОЛЬКО если .env там ещё нет
-#
-# FTP-секреты не используются: загрузка идёт по SCP (SSH).
-#
-# На сервере НЕ перезаписываются: существующий .env, база данных,
-# storage/app (изображения и файлы обмена 1С), storage/framework, storage/logs.
-
 name: Deploy to SpaceWeb (SSH)
 
 on:
@@ -33,7 +10,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Адрес сайта для финальной проверки; замените при смене домена
   SITE_URL: http://netesngmai.temp.swtest.ru
 
 jobs:
@@ -102,7 +78,6 @@ jobs:
               cd ~/public_html || exit 1
               unzip -o atlas.zip
               rm -f atlas.zip
-              # bootstrap/cache исключён из архива, но Laravel требует его наличия
               mkdir -p bootstrap/cache
               mkdir -p storage/app/public storage/app/1c \
                        storage/framework/cache/data storage/framework/sessions \
@@ -164,10 +139,8 @@ jobs:
           SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
           SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
 
-      - name: Миграции и базовый сид БД
+      - name: Миграции и сид (включая FashionDemo)
         run: |
-          # На хостинге CLI-php может быть старым (parse error в artisan).
-          # Перебираем доступные бинарники PHP 8.x на сервере и используем первый.
           sshpass -p "$SSH_PASSWORD" ssh -p "$SSH_PORT" -o StrictHostKeyChecking=no \
             "$SSH_USERNAME@$SSH_HOST" '
               set -e
@@ -182,17 +155,17 @@ jobs:
               done
 
               if [ -z "$PHP_BIN" ]; then
-                echo "Не найден PHP 8.x на сервере (проверьте бинарники: which php*)" >&2
+                echo "Не найден PHP 8.x на сервере" >&2
                 exit 1
               fi
 
-              echo "PHP: $PHP_BIN $("$PHP_BIN" -r "echo PHP_VERSION;" )"
-
-              # Диагностика: какие значения DB_* записаны в .env (без пароля)
+              echo "PHP: $PHP_BIN $($PHP_BIN -r "echo PHP_VERSION;")"
               grep -E "^DB_(CONNECTION|HOST|PORT|DATABASE|USERNAME)=" .env || true
 
               "$PHP_BIN" artisan migrate --force
               "$PHP_BIN" artisan db:seed --force
+              "$PHP_BIN" artisan db:seed --class=Database\\Seeders\\FashionDemoSeeder --force
+              echo "FashionDemoSeeder done"
             '
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
