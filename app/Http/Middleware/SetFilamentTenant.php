@@ -10,8 +10,8 @@ use Symfony\Component\HttpFoundation\Response;
 /**
  * Определяет контекст магазина для пользователя админ-панели.
  *
- * Владелец магазина видит только данные своего тенанта.
- * Супер-админ платформы управляет всеми магазинами.
+ * Владелец магазина (и супер-админ с tenant_id) видит данные своего тенанта.
+ * Без tenant_id контекст не задаётся — ресурсы должны это переживать без 500.
  */
 class SetFilamentTenant
 {
@@ -19,8 +19,11 @@ class SetFilamentTenant
     {
         $user = $request->user();
 
-        if ($user !== null && ! $user->isSuperAdmin() && $user->tenant_id !== null) {
-            app(TenantContext::class)->set($user->tenant);
+        if ($user !== null && $user->tenant_id !== null) {
+            $tenant = $user->tenant;
+            if ($tenant !== null) {
+                app(TenantContext::class)->set($tenant);
+            }
         }
 
         return $next($request);
