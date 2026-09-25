@@ -41,13 +41,6 @@ class Category extends Model
         });
     }
 
-    public function resolveRouteBinding($value, $field = null)
-    {
-        $field = $field ?? $this->getRouteKeyName();
-
-        return static::query()->where($field, $value)->first() ?? abort(404);
-    }
-
     public function parent(): BelongsTo
     {
         return $this->belongsTo(Category::class, 'parent_id');
