@@ -1,37 +1,28 @@
-# AtlasCMS: проект размещён в documentRoot (public_html на виртуальном хостинге).
-# Все запросы перенаправляются в подкаталог public/ (там лежит index.php Laravel).
-# Директивы написаны совместимо с Apache 2.2 и 2.4 (без Require, который на
-# некоторых хостингах вызывает 500).
+# AtlasCMS: documentRoot = public_html (весь проект Laravel).
+# Запросы уходят в public/ (index.php). Публичные файлы: public/storage → storage/app/public.
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
     RewriteBase /
 
-    # Временный распаковщик деплоя: выполняется напрямую, без редиректа в public/
     RewriteRule ^_unpack\.php$ - [L,NC]
-
-    # Запросы, уже идущие в public/, не трогаем
     RewriteRule ^public(/|$) - [L,NC]
 
-    # Корень сайта — сразу в public/ (в корне нет index.php)
+    # Корень → public/
     RewriteRule ^$ public/ [L]
 
-    # Остальное: существующие файлы (стили, картинки) отдаём как есть,
-    # всё остальное направляем в public/
+    # Существующие файлы отдаём как есть; остальное → public/
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^(.*)$ public/$1 [L]
 </IfModule>
 
-# ---------------------------------------------------------------------------
-# Защита служебных файлов и каталогов от прямого доступа через HTTP.
-# ---------------------------------------------------------------------------
-
-# Чувствительные файлы проекта (запрет через mod_access_compat — работает
-# и на Apache 2.2, и на 2.4 без модуля authz_core)
+# Чувствительные файлы
 <FilesMatch "^(\.env|\.env\..*|\.htaccess|artisan|composer\.json|composer\.lock|phpunit\.xml)$">
     Order allow,deny
     Deny from all
 </FilesMatch>
 
-# Служебные каталоги: 403 при обращении извне
-RedirectMatch 403 ^/(app|bootstrap|config|database|docs|resources|routes|storage|tests|vendor|log1c)(/|$)
+# Служебные каталоги. НЕ блокируем /storage целиком —
+# публичные картинки доступны как /storage/... через public/storage (symlink).
+RedirectMatch 403 ^/(app|bootstrap|config|database|docs|resources|routes|tests|vendor|log1c)(/|$)
+RedirectMatch 403 ^/storage/(app|framework|logs)(/|$)
