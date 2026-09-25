@@ -10,7 +10,9 @@ use App\Http\Controllers\Shop\CatalogController;
 use App\Http\Controllers\Shop\CheckoutController;
 use App\Http\Controllers\Shop\HomeController;
 use App\Http\Controllers\Shop\OrderTrackController;
+use App\Http\Controllers\Shop\PostController;
 use App\Http\Controllers\Shop\ProductController;
+use App\Http\Controllers\Shop\ReviewController;
 use App\Http\Controllers\Shop\ThemeCssController;
 use Illuminate\Support\Facades\Route;
 
@@ -40,6 +42,11 @@ Route::prefix('{shop}')
         Route::get('/catalog', [CatalogController::class, 'index'])->name('catalog.index');
         Route::get('/catalog/{categorySlug}', [CatalogController::class, 'category'])->name('catalog.category');
         Route::get('/product/{productSlug}', [ProductController::class, 'show'])->name('product.show');
+        Route::post('/product/{productSlug}/review', [ReviewController::class, 'store'])->name('product.review');
+
+        Route::get('/articles', [PostController::class, 'articles'])->name('articles.index');
+        Route::get('/news', [PostController::class, 'news'])->name('news.index');
+        Route::get('/blog/{postSlug}', [PostController::class, 'show'])->name('posts.show');
 
         Route::get('/cart', [CartController::class, 'index'])->name('cart.index');
         Route::post('/cart/add', [CartController::class, 'add'])->name('cart.add');

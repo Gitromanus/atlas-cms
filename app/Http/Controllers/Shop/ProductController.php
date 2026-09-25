@@ -17,7 +17,7 @@ class ProductController extends Controller
 
         abort_unless($product->is_active && ! $product->is_deleted_from_1c, 404);
 
-        $product->load(['images', 'category', 'features', 'prices', 'stocks', 'variants']);
+        $product->load(['images', 'category', 'features', 'prices', 'stocks', 'variants', 'approvedReviews']);
 
         $related = Product::query()
             ->active()
