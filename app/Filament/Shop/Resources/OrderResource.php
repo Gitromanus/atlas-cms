@@ -49,8 +49,8 @@ class OrderResource extends Resource
                             ->disabled(),
                         Forms\Components\TextInput::make('placed_at')
                             ->label('Дата заказа')
-                            ->disabled()
-                            ->datetime(),
+                            ->type('datetime-local')
+                            ->disabled(),
                     ])
                     ->columns(2),
                 Forms\Components\Section::make('Покупатель')
