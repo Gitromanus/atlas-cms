@@ -27,24 +27,40 @@ class ProductResource extends Resource
     {
         return $form
             ->schema([
-                // Компактная раскладка: слева изображения, справа основные данные (как в классических админках)
                 Forms\Components\Grid::make(['default' => 1, 'md' => 3])
                     ->schema([
                         Forms\Components\Section::make('Изображения')
-                            ->description('Основное фото и миниатюры; клик по миниатюре открывает её в предпросмотре')
+                            ->description('Первое в списке — основное на витрине. Меняйте порядок перетаскиванием, удаляйте лишние, добавляйте новые ниже.')
                             ->schema([
-                                // Компактная галерея: крупное фото + миниатюры (ссылки генерируются автоматически)
-                                Forms\Components\ViewField::make('images_gallery')
-                                    ->view('filament.shop.product-images-gallery')
-                                    ->dehydrated(false),
+                                Forms\Components\Repeater::make('images')
+                                    ->relationship()
+                                    ->label('Загруженные')
+                                    ->schema([
+                                        Forms\Components\Hidden::make('path'),
+                                        Forms\Components\Hidden::make('url'),
+                                        Forms\Components\Hidden::make('source'),
+                                        Forms\Components\Hidden::make('tenant_id'),
+                                        Forms\Components\ViewField::make('preview')
+                                            ->view('filament.shop.product-image-preview')
+                                            ->dehydrated(false),
+                                    ])
+                                    ->orderColumn('sort_order')
+                                    ->reorderable()
+                                    ->deletable()
+                                    ->addable(false)
+                                    ->defaultItems(0)
+                                    ->itemLabel(fn (array $state, ?int $index): string => ($index === 0 ? '★ Основное' : 'Фото '.(($index ?? 0) + 1)))
+                                    ->collapsible()
+                                    ->compact(),
                                 Forms\Components\FileUpload::make('new_images')
-                                    ->label('Добавить новые изображения')
-                                    ->helperText('Файлы сохранятся вместе с товаром')
+                                    ->label('Добавить изображения')
+                                    ->helperText('Сохранятся после нажатия «Сохранить»')
                                     ->disk('public')
                                     ->directory(fn () => 'products/'.self::tenantSlug().'/'.now()->format('Y/m'))
                                     ->image()
                                     ->multiple()
-                                    ->reorderable(),
+                                    ->reorderable()
+                                    ->downloadable(false),
                             ])
                             ->columnSpan(['default' => 1, 'md' => 1]),
                         Forms\Components\Section::make('Основное')
@@ -97,7 +113,6 @@ class ProductResource extends Resource
                         Forms\Components\Repeater::make('features')
                             ->relationship('features')
                             ->label('Характеристики товара')
-                            // Порядок сохраняется в sort_order (без orderColumn Filament его не пишет)
                             ->orderColumn('sort_order')
                             ->itemLabel(fn (array $state): ?string => filled($state['name'] ?? null)
                                 ? trim(($state['name'] ?? '').(filled($state['value'] ?? null) ? ': '.$state['value'] : ''))
@@ -115,7 +130,7 @@ class ProductResource extends Resource
                                     ->label('Варианты значений')
                                     ->placeholder('Добавить значение…')
                                     ->reorderable()
-                                    ->helperText('Перетаскивайте теги для ручного порядка; новые значения из 1С добавляются по алфавиту'),
+                                    ->helperText('Перетаскивайте теги для ручного порядка'),
                             ])
                             ->columns(2)
                             ->defaultItems(0)
@@ -171,9 +186,6 @@ class ProductResource extends Resource
     }
 
     /**
-     * Сохраняет вновь загруженные изображения (FileUpload уже положил файлы на диск).
-     * Вызывается из модальных действий и страниц ресурса.
-     *
      * @param  array<int, string>  $paths
      */
     public static function storeNewImages(Product $product, array $paths): void
@@ -203,14 +215,12 @@ class ProductResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        // Миникартинка и колонки «цена/остаток вариантов» используют отношения
         return parent::getEloquentQuery()->with(['mainImage', 'variants']);
     }
 
     public static function table(Table $table): Table
     {
         return $table
-            // Без перехода на страницу редактирования по клику на строку — редактирование в модале
             ->recordUrl(null)
             ->columns([
                 Tables\Columns\ImageColumn::make('mainImage.url')
@@ -219,8 +229,6 @@ class ProductResource extends Resource
                     ->size(40),
                 Tables\Columns\TextColumn::make('name')
                     ->label('Название')
-                    // Регистронезависимый поиск: по нормализованной колонке search_name
-                    // (name+sku в нижнем регистре; SQLite LOWER() не понимает кириллицу)
                     ->searchable(
                         'search_name',
                         query: fn (\Illuminate\Database\Eloquent\Builder $query, string $search): \Illuminate\Database\Eloquent\Builder
@@ -237,7 +245,6 @@ class ProductResource extends Resource
                     ),
                 Tables\Columns\TextColumn::make('price')
                     ->label('Цена')
-                    // Для товаров с вариантами — диапазон цен вариантов, иначе обычная цена
                     ->state(function (Product $record): ?string {
                         $range = $record->variantPriceRange();
 
@@ -255,7 +262,6 @@ class ProductResource extends Resource
                     ->placeholder('—'),
                 Tables\Columns\TextColumn::make('variants_list')
                     ->label('Варианты')
-                    // Все реальные комбинации: «Красный / M — 1500 ₽ — 4 шт», каждая с новой строки
                     ->state(function (Product $record): ?string {
                         if ($record->variants->isEmpty()) {
                             return null;
@@ -273,7 +279,6 @@ class ProductResource extends Resource
                     ->extraAttributes(['class' => 'whitespace-pre-line text-xs leading-5']),
                 Tables\Columns\TextColumn::make('stockTotal')
                     ->label('Остаток')
-                    // У товаров с вариантами остаток считается по вариантам
                     ->state(fn (Product $record): float => $record->hasVariants()
                         ? $record->variantStockTotal()
                         : $record->stockTotal())
@@ -292,9 +297,7 @@ class ProductResource extends Resource
                     ->relationship('category', 'name'),
             ])
             ->actions([
-                // Редактирование в модальном окне — не нужно возвращаться из отдельной страницы
                 Tables\Actions\EditAction::make()
-                    // Явно отключаем URL страницы ресурса, иначе действие станет ссылкой, а не модалом
                     ->url(null)
                     ->modal()
                     ->slideOver()
@@ -310,9 +313,7 @@ class ProductResource extends Resource
 
     public static function getRelations(): array
     {
-        return [
-            //
-        ];
+        return [];
     }
 
     public static function getPages(): array
