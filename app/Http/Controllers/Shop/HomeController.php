@@ -19,13 +19,11 @@ class HomeController extends Controller
         $enableNews = (bool) $tenant?->setting('enable_news', true);
         $enableReviews = (bool) $tenant?->setting('enable_reviews', true);
 
-        $products = Product::query()
-            ->active()
-            ->with(['images', 'category', 'features', 'variants', 'prices', 'stocks'])
-            ->inStock()
-            ->latest()
-            ->limit(8)
-            ->get();
+        $with = ['images', 'category', 'features', 'variants', 'prices', 'stocks'];
+        $products = Product::query()->active()->with($with)->inStock()->latest()->limit(8)->get();
+        $hits = Product::query()->active()->with($with)->hits()->inStock()->limit(8)->get();
+        $newArrivals = Product::query()->active()->with($with)->newArrivals()->inStock()->limit(8)->get();
+        $saleProducts = Product::query()->active()->with($with)->onSale()->inStock()->limit(8)->get();
 
         $categories = collect(Category::menuTree());
 
@@ -48,6 +46,9 @@ class HomeController extends Controller
 
         return view('shop.home', [
             'products' => $products,
+            'hits' => $hits,
+            'newArrivals' => $newArrivals,
+            'saleProducts' => $saleProducts,
             'categories' => $categories,
             'articles' => $articles,
             'news' => $news,
