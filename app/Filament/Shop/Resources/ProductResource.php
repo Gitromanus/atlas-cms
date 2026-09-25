@@ -40,16 +40,35 @@ class ProductResource extends Resource
                                         Forms\Components\Hidden::make('url'),
                                         Forms\Components\Hidden::make('source'),
                                         Forms\Components\Hidden::make('tenant_id'),
-                                        Forms\Components\ViewField::make('preview')
-                                            ->view('filament.shop.product-image-preview')
-                                            ->dehydrated(false),
+                                        Forms\Components\Placeholder::make('preview')
+                                            ->label('')
+                                            ->content(function ($get): \Illuminate\Support\HtmlString {
+                                                $url = $get('url');
+                                                $path = $get('path');
+                                                $src = null;
+                                                if (filled($url)) {
+                                                    $src = $url;
+                                                } elseif (filled($path)) {
+                                                    $rel = str_starts_with((string) $path, 'products/') ? $path : 'products/'.$path;
+                                                    $src = asset('storage/'.$rel);
+                                                }
+                                                if (! $src) {
+                                                    return new \Illuminate\Support\HtmlString(
+                                                        '<div class="flex h-20 items-center justify-center rounded bg-gray-100 text-xs text-gray-400">нет превью</div>'
+                                                    );
+                                                }
+
+                                                return new \Illuminate\Support\HtmlString(
+                                                    '<img src="'.e($src).'" alt="" class="h-24 w-full rounded-lg object-cover" />'
+                                                );
+                                            }),
                                     ])
                                     ->orderColumn('sort_order')
                                     ->reorderable()
                                     ->deletable()
                                     ->addable(false)
                                     ->defaultItems(0)
-                                    ->itemLabel(fn (array $state, ?int $index): string => ($index === 0 ? '★ Основное' : 'Фото '.(($index ?? 0) + 1)))
+                                    ->itemLabel(fn (array $state): string => 'Фото')
                                     ->collapsible()
                                     ->compact(),
                                 Forms\Components\FileUpload::make('new_images')
@@ -108,7 +127,7 @@ class ProductResource extends Resource
                     ])
                     ->collapsible(),
                 Forms\Components\Section::make('Характеристики')
-                    ->description('Перетаскивайте строки, чтобы задать порядок. Свойства с включённым «Вариантом» выбираются на витрине.')
+                    ->description('Перетаскивайте строки, чтобы задать порядок.')
                     ->schema([
                         Forms\Components\Repeater::make('features')
                             ->relationship('features')
@@ -118,19 +137,10 @@ class ProductResource extends Resource
                                 ? trim(($state['name'] ?? '').(filled($state['value'] ?? null) ? ': '.$state['value'] : ''))
                                 : null)
                             ->schema([
-                                Forms\Components\TextInput::make('name')
-                                    ->label('Название')
-                                    ->required(),
-                                Forms\Components\TextInput::make('value')
-                                    ->label('Значение'),
-                                Forms\Components\Toggle::make('is_variant')
-                                    ->label('Вариант')
-                                    ->helperText('Выбор на витрине'),
-                                Forms\Components\TagsInput::make('options')
-                                    ->label('Варианты значений')
-                                    ->placeholder('Добавить значение…')
-                                    ->reorderable()
-                                    ->helperText('Перетаскивайте теги для ручного порядка'),
+                                Forms\Components\TextInput::make('name')->label('Название')->required(),
+                                Forms\Components\TextInput::make('value')->label('Значение'),
+                                Forms\Components\Toggle::make('is_variant')->label('Вариант')->helperText('Выбор на витрине'),
+                                Forms\Components\TagsInput::make('options')->label('Варианты значений')->reorderable(),
                             ])
                             ->columns(2)
                             ->defaultItems(0)
@@ -139,55 +149,31 @@ class ProductResource extends Resource
                     ])
                     ->collapsible(),
                 Forms\Components\Section::make('Цены и остатки')
-                    ->description('Приходят из 1С; можно править вручную')
                     ->schema([
                         Forms\Components\Repeater::make('prices')
                             ->relationship('prices')
-                            ->label('Цены по типам цен')
-                            ->itemLabel(fn (array $state): ?string => isset($state['price'])
-                                ? 'Цена: '.number_format((float) $state['price'], 2, ',', ' ')
-                                : null)
+                            ->label('Цены')
                             ->schema([
-                                Forms\Components\Select::make('price_type_id')
-                                    ->label('Тип цены')
-                                    ->relationship('priceType', 'name')
-                                    ->required(),
-                                Forms\Components\TextInput::make('price')
-                                    ->label('Цена')
-                                    ->numeric()
-                                    ->required(),
+                                Forms\Components\Select::make('price_type_id')->label('Тип цены')->relationship('priceType', 'name')->required(),
+                                Forms\Components\TextInput::make('price')->label('Цена')->numeric()->required(),
                             ])
                             ->columns(2)
                             ->defaultItems(0)
-                            ->reorderableWithButtons()
                             ->collapsible(),
                         Forms\Components\Repeater::make('stocks')
                             ->relationship('stocks')
-                            ->label('Остатки по складам')
-                            ->itemLabel(fn (array $state): ?string => isset($state['quantity'])
-                                ? 'Остаток: '.number_format((float) $state['quantity'], 0, ',', ' ')
-                                : null)
+                            ->label('Остатки')
                             ->schema([
-                                Forms\Components\Select::make('warehouse_id')
-                                    ->label('Склад')
-                                    ->relationship('warehouse', 'name')
-                                    ->required(),
-                                Forms\Components\TextInput::make('quantity')
-                                    ->label('Количество')
-                                    ->numeric()
-                                    ->required(),
+                                Forms\Components\Select::make('warehouse_id')->label('Склад')->relationship('warehouse', 'name')->required(),
+                                Forms\Components\TextInput::make('quantity')->label('Количество')->numeric()->required(),
                             ])
                             ->columns(2)
                             ->defaultItems(0)
-                            ->reorderableWithButtons()
                             ->collapsible(),
                     ]),
             ]);
     }
 
-    /**
-     * @param  array<int, string>  $paths
-     */
     public static function storeNewImages(Product $product, array $paths): void
     {
         if ($paths === []) {
@@ -215,7 +201,7 @@ class ProductResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        return parent::getEloquentQuery()->with(['mainImage', 'variants']);
+        return parent::getEloquentQuery()->with(['mainImage', 'variants', 'images']);
     }
 
     public static function table(Table $table): Table
@@ -236,65 +222,26 @@ class ProductResource extends Resource
                     )
                     ->sortable()
                     ->limit(40),
-                Tables\Columns\TextColumn::make('sku')
-                    ->label('Артикул')
-                    ->searchable(
-                        'search_name',
-                        query: fn (\Illuminate\Database\Eloquent\Builder $query, string $search): \Illuminate\Database\Eloquent\Builder
-                            => $query->where('search_name', 'like', '%'.mb_strtolower($search).'%'),
-                    ),
+                Tables\Columns\TextColumn::make('sku')->label('Артикул'),
                 Tables\Columns\TextColumn::make('price')
                     ->label('Цена')
                     ->state(function (Product $record): ?string {
-                        $range = $record->variantPriceRange();
-
-                        if ($range !== null) {
-                            $min = number_format($range['min'], 0, ',', ' ');
-                            $max = number_format($range['max'], 0, ',', ' ');
-
-                            return $min === $max ? $min.' ₽' : $min.' – '.$max.' ₽';
-                        }
-
                         return $record->price !== null
                             ? number_format($record->price, 0, ',', ' ').' ₽'
                             : null;
                     })
                     ->placeholder('—'),
-                Tables\Columns\TextColumn::make('variants_list')
-                    ->label('Варианты')
-                    ->state(function (Product $record): ?string {
-                        if ($record->variants->isEmpty()) {
-                            return null;
-                        }
-
-                        return $record->variants
-                            ->map(fn ($variant): string => collect($variant->options ?? [])->implode(' / ')
-                                .' — '.number_format((float) $variant->price, 0, ',', ' ').' ₽'
-                                .' — '.number_format((float) $variant->quantity, 0, ',', ' ').' шт')
-                            ->implode("\n");
-                    })
-                    ->formatStateUsing(fn (?string $state): ?string => filled($state) ? trim($state) : null)
-                    ->wrap()
-                    ->placeholder('—')
-                    ->extraAttributes(['class' => 'whitespace-pre-line text-xs leading-5']),
                 Tables\Columns\TextColumn::make('stockTotal')
                     ->label('Остаток')
-                    ->state(fn (Product $record): float => $record->hasVariants()
-                        ? $record->variantStockTotal()
-                        : $record->stockTotal())
+                    ->state(fn (Product $record): float => $record->stockTotal())
                     ->formatStateUsing(fn (float $state): string => number_format($state, 0, ',', ' '))
                     ->badge()
                     ->color(fn (float $state): string => $state > 0 ? 'success' : 'gray'),
-                Tables\Columns\IconColumn::make('is_active')
-                    ->label('Активен')
-                    ->boolean(),
+                Tables\Columns\IconColumn::make('is_active')->label('Активен')->boolean(),
             ])
             ->filters([
-                Tables\Filters\TernaryFilter::make('is_active')
-                    ->label('Активность'),
-                Tables\Filters\SelectFilter::make('category_id')
-                    ->label('Категория')
-                    ->relationship('category', 'name'),
+                Tables\Filters\TernaryFilter::make('is_active')->label('Активность'),
+                Tables\Filters\SelectFilter::make('category_id')->label('Категория')->relationship('category', 'name'),
             ])
             ->actions([
                 Tables\Actions\EditAction::make()
