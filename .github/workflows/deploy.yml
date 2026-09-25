@@ -11,10 +11,12 @@
 # Секреты репозитория (Settings → Secrets and variables → Actions):
 #   SSH_HOST      — хост SSH (например, 77.222.40.198)
 #   SSH_USERNAME  — логин SSH (например, netesngmai)
-#   SSH_PASSWORD  — пароль SSH (если не задан, используется FTP_PASSWORD)
+#   SSH_PASSWORD  — пароль SSH
 #   SSH_PORT      — порт SSH (по умолчанию 22)
 #   ENV_CONTENT   — (опционально) полное содержимое .env; пишется на сервер
 #                   ТОЛЬКО если .env там ещё нет
+#
+# FTP-секреты не используются: загрузка идёт по SCP (SSH).
 #
 # На сервере НЕ перезаписываются: существующий .env, база данных,
 # storage/app (изображения и файлы обмена 1С), storage/framework, storage/logs.
@@ -89,7 +91,7 @@ jobs:
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
-          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD || secrets.FTP_PASSWORD }}
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
           SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
 
       - name: Распаковка и подготовка storage на сервере
@@ -108,7 +110,7 @@ jobs:
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
-          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD || secrets.FTP_PASSWORD }}
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
           SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
 
       - name: Создание .env, если его ещё нет
@@ -121,7 +123,7 @@ jobs:
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
-          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD || secrets.FTP_PASSWORD }}
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
           SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
 
       - name: Миграции и базовый сид БД
@@ -136,7 +138,7 @@ jobs:
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USERNAME: ${{ secrets.SSH_USERNAME }}
-          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD || secrets.FTP_PASSWORD }}
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
           SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
 
       - name: Проверка, что сайт отвечает
