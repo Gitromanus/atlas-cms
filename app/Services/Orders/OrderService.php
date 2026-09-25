@@ -2,14 +2,17 @@
 
 namespace App\Services\Orders;
 
+use App\Mail\NewOrderToShop;
+use App\Mail\OrderConfirmationToCustomer;
 use App\Models\Customer;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderStatus;
-use App\Models\Product;
 use App\Services\Cart\CartService;
 use App\Services\Tenant\TenantContext;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 
 /**
@@ -26,9 +29,6 @@ class OrderService
     {
         $customer = auth('customers')->user();
 
-        // Покупатель, оформивший заказ без входа в личный кабинет, автоматически
-        // привязывается к существующему или вновь созданному профилю (по email/телефону),
-        // чтобы заказ и покупатель были видны в админке магазина.
         if ($customer === null) {
             $customer = $this->findOrCreateCustomer($data);
         }
@@ -81,14 +81,44 @@ class OrderService
 
             $this->cart->clear();
 
-            return $order->load('items');
+            $order->load(['items', 'status']);
+            $this->notifyAboutOrder($order);
+
+            return $order;
         });
     }
 
+    protected function notifyAboutOrder(Order $order): void
+    {
+        $tenant = app(TenantContext::class)->current();
+        if ($tenant === null) {
+            $tenant = $order->tenant ?? null;
+        }
+        if ($tenant === null) {
+            return;
+        }
+
+        $tenant->refresh();
+
+        try {
+            $shopEmail = $tenant->setting('email');
+            if (filled($shopEmail)) {
+                Mail::to($shopEmail)->send(new NewOrderToShop($order, $tenant));
+            }
+        } catch (\Throwable $e) {
+            Log::warning('NewOrderToShop mail failed: '.$e->getMessage());
+        }
+
+        try {
+            if (filled($order->customer_email)) {
+                Mail::to($order->customer_email)->send(new OrderConfirmationToCustomer($order, $tenant));
+            }
+        } catch (\Throwable $e) {
+            Log::warning('OrderConfirmation mail failed: '.$e->getMessage());
+        }
+    }
+
     /**
-     * Находит покупателя в текущем магазине по email/телефону или создаёт профиль.
-     * Пароль генерируется случайно — восстановление/вход не затронут существующих пользователей.
-     *
      * @param  array{name?: string, phone?: string, email?: string}  $data
      */
     protected function findOrCreateCustomer(array $data): ?Customer
@@ -119,7 +149,6 @@ class OrderService
                 'password' => (string) Str::uuid(),
             ]);
         } catch (\Illuminate\Database\QueryException $e) {
-            // Гонка: профиль с таким email/телефоном создан параллельным запросом
             return $find();
         }
     }

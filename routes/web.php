@@ -9,6 +9,7 @@ use App\Http\Controllers\Shop\CartController;
 use App\Http\Controllers\Shop\CatalogController;
 use App\Http\Controllers\Shop\CheckoutController;
 use App\Http\Controllers\Shop\HomeController;
+use App\Http\Controllers\Shop\OrderTrackController;
 use App\Http\Controllers\Shop\ProductController;
 use App\Http\Controllers\Shop\ThemeCssController;
 use Illuminate\Support\Facades\Route;
@@ -25,56 +26,6 @@ Route::get('/create-shop', [ShopRegistrationController::class, 'create'])->name(
 Route::post('/create-shop', [ShopRegistrationController::class, 'store']);
 
 Route::redirect('/login', '/shop/login');
-
-Route::get('/_atlas_debug/{slug?}', function (?string $slug = 'futbolka-classic-belaya') {
-    try {
-        $tenant = \App\Models\Tenant::query()->where('slug', 'odeza-i-obuv')->first();
-        app(\App\Services\Tenant\TenantContext::class)->set($tenant);
-
-        $product = \App\Models\Product::query()->where('slug', $slug)->first();
-        if (! $product) {
-            return response('product not found slug='.$slug, 404);
-        }
-
-        $product->load(['images', 'category', 'features', 'variants', 'prices', 'stocks']);
-
-        return response()->json([
-            'ok' => true,
-            'id' => $product->id,
-            'name' => $product->name,
-            'price' => $product->price,
-            'images' => $product->images->count(),
-            'urls' => $product->images->map(fn ($i) => $i->url)->values(),
-            'category' => $product->category?->slug,
-        ]);
-    } catch (\Throwable $e) {
-        return response(
-            $e::class.': '.$e->getMessage()."\n".$e->getFile().':'.$e->getLine()."\n\n".$e->getTraceAsString(),
-            500,
-            ['Content-Type' => 'text/plain; charset=UTF-8']
-        );
-    }
-});
-
-Route::get('/_atlas_debug_view/{slug?}', function (?string $slug = 'futbolka-classic-belaya') {
-    try {
-        $tenant = \App\Models\Tenant::query()->where('slug', 'odeza-i-obuv')->first();
-        app(\App\Services\Tenant\TenantContext::class)->set($tenant);
-        \Illuminate\Support\Facades\URL::defaults(['shop' => 'odeza-i-obuv']);
-
-        $product = \App\Models\Product::query()->where('slug', $slug)->firstOrFail();
-        $product->load(['images', 'category', 'features', 'prices']);
-        $related = collect();
-
-        return view('shop.product', compact('product', 'related'));
-    } catch (\Throwable $e) {
-        return response(
-            $e::class.': '.$e->getMessage()."\n".$e->getFile().':'.$e->getLine()."\n\n".$e->getTraceAsString(),
-            500,
-            ['Content-Type' => 'text/plain; charset=UTF-8']
-        );
-    }
-});
 
 $shopPattern = '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$';
 
@@ -95,6 +46,9 @@ Route::prefix('{shop}')
         Route::patch('/cart/{item}/update', [CartController::class, 'update'])->name('cart.update');
         Route::delete('/cart/{item}/remove', [CartController::class, 'remove'])->name('cart.remove');
         Route::delete('/cart/clear', [CartController::class, 'clear'])->name('cart.clear');
+
+        Route::get('/track', [OrderTrackController::class, 'form'])->name('order.track');
+        Route::post('/track', [OrderTrackController::class, 'lookup'])->name('order.track.lookup');
 
         Route::get('/checkout', [CheckoutController::class, 'index'])->name('checkout.index');
         Route::post('/checkout', [CheckoutController::class, 'store'])->name('checkout.store');
