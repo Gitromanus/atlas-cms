@@ -4,7 +4,7 @@ namespace App\Filament\Shop\Resources;
 
 use App\Filament\Shop\Resources\ProductResource\Pages;
 use App\Models\Product;
-use App\Models\ProductImage;
+use App\Services\Tenant\TenantContext;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -30,18 +30,70 @@ class ProductResource extends Resource
                 Forms\Components\Grid::make(['default' => 1, 'md' => 3])
                     ->schema([
                         Forms\Components\Section::make('Изображения')
-                            ->description('Загрузите фото и нажмите Сохранить. Первое станет основным.')
+                            ->description('Первое в списке — основное. Можно менять порядок и удалять.')
                             ->schema([
-                                Forms\Components\FileUpload::make('new_images')
-                                    ->label('Добавить изображения')
-                                    ->disk('public')
-                                    ->directory(fn (): string => 'products/'.self::tenantSlug().'/'.now()->format('Y/m'))
-                                    ->visibility('public')
-                                    ->image()
-                                    ->multiple()
+                                Forms\Components\Repeater::make('images')
+                                    ->relationship()
+                                    ->label('Фотографии')
+                                    ->schema([
+                                        Forms\Components\FileUpload::make('path')
+                                            ->label('Файл')
+                                            ->disk('public')
+                                            ->directory(fn (): string => 'products/'.self::tenantSlug().'/'.now()->format('Y/m'))
+                                            ->visibility('public')
+                                            ->image()
+                                            ->imagePreviewHeight('120')
+                                            ->nullable()
+                                            ->dehydrated(true),
+                                        Forms\Components\TextInput::make('url')
+                                            ->label('Или внешний URL')
+                                            ->url()
+                                            ->nullable()
+                                            ->helperText('Если нет файла — можно указать ссылку'),
+                                        Forms\Components\Hidden::make('source')
+                                            ->default('manual'),
+                                        Forms\Components\Hidden::make('tenant_id')
+                                            ->default(fn () => app(TenantContext::class)->id()),
+                                    ])
+                                    ->orderColumn('sort_order')
                                     ->reorderable()
-                                    ->maxFiles(20)
-                                    ->dehydrated(true),
+                                    ->reorderableWithButtons()
+                                    ->collapsible()
+                                    ->cloneable(false)
+                                    ->defaultItems(0)
+                                    ->addActionLabel('Добавить фото')
+                                    ->itemLabel(function (array $state): ?string {
+                                        if (filled($state['path'] ?? null)) {
+                                            return 'Файл: '.basename((string) $state['path']);
+                                        }
+                                        if (filled($state['url'] ?? null)) {
+                                            return 'URL';
+                                        }
+
+                                        return 'Новое фото';
+                                    })
+                                    ->mutateRelationshipDataBeforeCreateUsing(function (array $data): array {
+                                        $data['tenant_id'] = $data['tenant_id']
+                                            ?? app(TenantContext::class)->id();
+                                        $data['source'] = $data['source'] ?? 'manual';
+                                        if (filled($data['path'] ?? null)) {
+                                            $data['path'] = ltrim((string) $data['path'], '/');
+                                            $data['url'] = null;
+                                        }
+
+                                        return $data;
+                                    })
+                                    ->mutateRelationshipDataBeforeSaveUsing(function (array $data): array {
+                                        if (filled($data['path'] ?? null)) {
+                                            $data['path'] = ltrim((string) $data['path'], '/');
+                                            $data['url'] = null;
+                                        }
+
+                                        return $data;
+                                    })
+                                    ->deleteAction(
+                                        fn (Forms\Components\Actions\Action $action) => $action->requiresConfirmation()
+                                    ),
                             ])
                             ->columnSpan(['default' => 1, 'md' => 1]),
                         Forms\Components\Section::make('Основное')
@@ -90,42 +142,20 @@ class ProductResource extends Resource
                                     ->required(),
                             ])
                             ->columns(2)
-                            ->defaultItems(0),
+                            ->defaultItems(0)
+                            ->mutateRelationshipDataBeforeCreateUsing(function (array $data): array {
+                                $data['tenant_id'] = app(TenantContext::class)->id();
+
+                                return $data;
+                            }),
                     ])
                     ->collapsed(),
             ]);
     }
 
-    /**
-     * @param  array<int, string>  $paths
-     */
-    public static function storeNewImages(Product $product, array $paths): void
-    {
-        $paths = array_values(array_filter($paths, fn ($p) => is_string($p) && $p !== ''));
-
-        if ($paths === []) {
-            return;
-        }
-
-        $startOrder = (int) $product->images()->max('sort_order');
-
-        foreach ($paths as $index => $path) {
-            $path = ltrim($path, '/');
-
-            ProductImage::query()->create([
-                'tenant_id' => $product->tenant_id,
-                'product_id' => $product->id,
-                'path' => $path,
-                'url' => null,
-                'source' => 'manual',
-                'sort_order' => $startOrder + $index + 1,
-            ]);
-        }
-    }
-
     protected static function tenantSlug(): string
     {
-        return app(\App\Services\Tenant\TenantContext::class)->current()?->slug ?? 'common';
+        return app(TenantContext::class)->current()?->slug ?? 'common';
     }
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
@@ -155,6 +185,10 @@ class ProductResource extends Resource
                         ? number_format($record->price, 0, ',', ' ').' ₽'
                         : null)
                     ->placeholder('—'),
+                Tables\Columns\TextColumn::make('images_count')
+                    ->label('Фото')
+                    ->counts('images')
+                    ->badge(),
                 Tables\Columns\IconColumn::make('is_active')->label('Активен')->boolean(),
             ])
             ->filters([
@@ -164,17 +198,7 @@ class ProductResource extends Resource
                 Tables\Actions\EditAction::make()
                     ->url(null)
                     ->modal()
-                    ->slideOver()
-                    ->using(function (array $data, Product $record): Product {
-                        $paths = $data['new_images'] ?? [];
-                        unset($data['new_images']);
-
-                        $record->update($data);
-
-                        self::storeNewImages($record, is_array($paths) ? $paths : []);
-
-                        return $record->refresh();
-                    }),
+                    ->slideOver(),
                 Tables\Actions\DeleteAction::make(),
             ])
             ->bulkActions([
