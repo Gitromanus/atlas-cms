@@ -61,9 +61,17 @@ class ShopAdminFormsTest extends TestCase
         $this->actingAs($user);
 
         // Список и страница редактирования заказа рендерятся без исключений
-        Livewire::test(ListOrders::class)
+        $list = Livewire::test(ListOrders::class)
             ->assertOk()
             ->assertSee('Заказы');
+
+        // Редактирование заказа открывается модалом, а не ведёт на страницу
+        $table = $list->instance()->getTable();
+        $this->assertNull($table->getRecordUrl($order), 'Клик по строке заказа не должен вести на страницу');
+        $edit = collect($table->getActions())->first(fn ($a): bool => $a->getName() === 'edit');
+        $this->assertNotNull($edit);
+        $this->assertTrue($edit->shouldOpenModal(), 'EditAction заказа должен открывать модал');
+        $this->assertNull($edit->getUrl(), 'EditAction заказа не должен иметь URL страницы');
 
         Livewire::test(EditOrder::class, ['record' => $order->getRouteKey()])
             ->assertOk()

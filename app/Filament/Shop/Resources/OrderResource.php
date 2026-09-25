@@ -56,31 +56,34 @@ class OrderResource extends Resource
                 Forms\Components\Section::make('Покупатель')
                     ->schema([
                         Forms\Components\TextInput::make('customer_name')
-                            ->label('Имя')
-                            ->disabled(),
+                            ->label('Имя'),
                         Forms\Components\TextInput::make('customer_phone')
-                            ->label('Телефон')
-                            ->disabled(),
+                            ->label('Телефон'),
                         Forms\Components\TextInput::make('customer_email')
-                            ->label('Email')
-                            ->disabled(),
+                            ->label('Email'),
                     ])
                     ->columns(2),
                 Forms\Components\Section::make('Доставка и оплата')
                     ->schema([
-                        Forms\Components\TextInput::make('delivery_method')
+                        Forms\Components\Select::make('delivery_method')
                             ->label('Доставка')
-                            ->disabled(),
-                        Forms\Components\TextInput::make('payment_method')
+                            ->options([
+                                'pickup' => 'Самовывоз',
+                                'courier' => 'Курьер',
+                                'post' => 'Почта',
+                            ]),
+                        Forms\Components\Select::make('payment_method')
                             ->label('Оплата')
-                            ->disabled(),
+                            ->options([
+                                'cash' => 'Наличными',
+                                'card_online' => 'Картой онлайн',
+                                'card_courier' => 'Картой курьеру',
+                            ]),
                         Forms\Components\Textarea::make('delivery_address')
                             ->label('Адрес доставки')
-                            ->disabled()
                             ->columnSpanFull(),
                         Forms\Components\Textarea::make('comment')
                             ->label('Комментарий')
-                            ->disabled()
                             ->columnSpanFull(),
                     ]),
             ]);
@@ -89,6 +92,8 @@ class OrderResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            // Без перехода на страницу редактирования по клику на строку — правки в модальном окне
+            ->recordUrl(null)
             ->defaultSort('id', 'desc')
             ->columns([
                 Tables\Columns\TextColumn::make('number')
@@ -131,6 +136,12 @@ class OrderResource extends Resource
                     ->label('Передан в 1С'),
             ])
             ->actions([
+                // Полная страница заказа: состав позиций, история, детали
+                Tables\Actions\Action::make('open')
+                    ->label('Открыть')
+                    ->icon('heroicon-m-arrow-top-right-on-square')
+                    ->color('gray')
+                    ->url(fn (Order $record): string => static::getUrl('edit', ['record' => $record])),
                 // Быстрая смена статуса в модальном окне
                 Tables\Actions\Action::make('changeStatus')
                     ->label('Статус')
@@ -146,7 +157,11 @@ class OrderResource extends Resource
                     ->action(function (Order $record, array $data): void {
                         $record->update(['status_id' => $data['status_id']]);
                     }),
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\EditAction::make()
+                    // Редактирование в модальном окне — не уводим на отдельную страницу
+                    ->url(null)
+                    ->modal()
+                    ->slideOver(),
                 Tables\Actions\DeleteAction::make(),
             ])
             ->bulkActions([
