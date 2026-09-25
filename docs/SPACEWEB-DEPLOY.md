@@ -3,6 +3,17 @@
 Пошаговая инструкция развёртывания на бесплатном тарифе SpaceWeb
 (PHP + MySQL, доступ по FTP/панели).
 
+## 0. Автоматический деплой через GitHub Actions
+
+В репозитории есть workflow [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml):
+при push в `main` он собирает `vendor` и загружает проект по FTP в
+`/home/n/netesngmai/public_html/` (порт 21).
+
+Секреты репозитория: `FTP_HOST`, `FTP_USERNAME`, `FTP_PASSWORD`, `FTP_PORT` (опционально).
+
+> Деплой **не затирает** на сервере: `.env`, базу данных, `storage/app`
+> (изображения и файлы обмена 1С), сессии, кэш и логи.
+
 ## 1. Сборка проекта локально
 
 ```bash
@@ -35,7 +46,12 @@ composer install --no-dev --optimize-autoloader
 
 ## 3. Настройка .env
 
-Скопируйте `.env.example` в `.env` и заполните:
+> Для этого хостинга (пользователь `netesngmai`, MySQL 8) в корне локального
+> проекта уже подготовлен файл **`.env.production`** — он вне git и содержит
+> готовый APP_KEY и доступы к БД. Просто скопируйте его на сервер как `.env`
+> и замените `APP_URL` / `ATLAS_ROOT_DOMAIN` на ваш домен.
+
+Либо скопируйте `.env.example` в `.env` и заполните вручную:
 
 ```ini
 APP_ENV=production
