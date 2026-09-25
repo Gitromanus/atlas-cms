@@ -6,7 +6,9 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>@yield('title', $currentTenant?->name ?? 'AtlasCMS')</title>
     <link rel="stylesheet" href="{{ asset('css/shop.css') }}">
-    <link rel="stylesheet" href="{{ route('theme.css') }}">
+    @if (\Illuminate\Support\Facades\Route::has('theme.css'))
+        <link rel="stylesheet" href="{{ route('theme.css') }}">
+    @endif
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -32,26 +34,30 @@
 </head>
 <body class="flex min-h-screen flex-col bg-slate-50 text-slate-800 antialiased">
 @php
-    $shopName = $currentTenant?->name ?? 'Магазин';
-    $phone = $currentTenant?->setting('phone');
-    $email = $currentTenant?->setting('email');
-    $address = $currentTenant?->setting('address');
-    $hours = $currentTenant?->setting('hours');
-    $about = $currentTenant?->setting('about');
+    $tenant = $currentTenant ?? app(\App\Services\Tenant\TenantContext::class)->current();
+    $settings = is_array($tenant?->settings) ? $tenant->settings : [];
+    $shopName = $tenant?->name ?? 'Магазин';
+    $phone = $settings['phone'] ?? null;
+    $email = $settings['email'] ?? null;
+    $address = $settings['address'] ?? null;
+    $hours = $settings['hours'] ?? null;
+    $about = $settings['about'] ?? null;
+    $phoneHref = $phone ? preg_replace('/[^\d+]/', '', $phone) : null;
 @endphp
 
-@if ($phone || $hours)
+{{-- atlas-layout-v2 --}}
+@if (filled($phone) || filled($hours))
     <div class="border-b border-slate-200 bg-white text-sm text-slate-600">
         <div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-1.5">
             <div class="flex flex-wrap items-center gap-4">
-                @if ($phone)
-                    <a href="tel:{{ preg_replace('/[^\\d+]/', '', $phone) }}" class="font-medium text-primary hover:underline">{{ $phone }}</a>
+                @if (filled($phone))
+                    <a href="tel:{{ $phoneHref }}" class="font-medium text-primary hover:underline">{{ $phone }}</a>
                 @endif
-                @if ($hours)
+                @if (filled($hours))
                     <span class="text-slate-500">{{ $hours }}</span>
                 @endif
             </div>
-            @if ($email)
+            @if (filled($email))
                 <a href="mailto:{{ $email }}" class="hidden text-slate-500 hover:text-primary sm:inline">{{ $email }}</a>
             @endif
         </div>
@@ -61,8 +67,8 @@
 <header class="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
     <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
         <a href="{{ route('home') }}" class="flex shrink-0 items-center gap-2">
-            @if ($currentTenant?->logo_path)
-                <img src="{{ asset('storage/logos/'.$currentTenant->logo_path) }}" alt="{{ $shopName }}" class="h-8 w-8 rounded-theme object-cover">
+            @if ($tenant?->logo_path)
+                <img src="{{ asset('storage/logos/'.$tenant->logo_path) }}" alt="{{ $shopName }}" class="h-8 w-8 rounded-theme object-cover">
             @else
                 <span class="flex h-8 w-8 items-center justify-center rounded-theme bg-primary font-black text-white">A</span>
             @endif
@@ -72,7 +78,6 @@
         <nav class="hidden items-center gap-5 md:flex">
             <a href="{{ route('home') }}" class="font-medium transition hover:text-primary">Главная</a>
             <a href="{{ route('catalog.index') }}" class="font-medium transition hover:text-primary">Каталог</a>
-
             @php($categoryMenu = \App\Models\Category::menuTree())
             @foreach ($categoryMenu as $category)
                 @include('shop.partials.category-menu', ['category' => $category, 'menuLevel' => 0])
@@ -143,27 +148,27 @@
     <div class="mx-auto grid max-w-6xl gap-8 px-4 py-10 sm:grid-cols-2 lg:grid-cols-3">
         <div>
             <p class="text-base font-bold text-slate-900">{{ $shopName }}</p>
-            @if ($about)
+            @if (filled($about))
                 <p class="mt-2 text-sm leading-relaxed text-slate-600">{{ $about }}</p>
             @endif
         </div>
         <div class="text-sm text-slate-600">
             <p class="font-semibold text-slate-900">Контакты</p>
             <ul class="mt-2 space-y-1">
-                @if ($phone)
-                    <li><a href="tel:{{ preg_replace('/[^\\d+]/', '', $phone) }}" class="hover:text-primary">{{ $phone }}</a></li>
+                @if (filled($phone))
+                    <li><a href="tel:{{ $phoneHref }}" class="hover:text-primary">{{ $phone }}</a></li>
                 @endif
-                @if ($email)
+                @if (filled($email))
                     <li><a href="mailto:{{ $email }}" class="hover:text-primary">{{ $email }}</a></li>
                 @endif
-                @if ($address)
+                @if (filled($address))
                     <li>{{ $address }}</li>
                 @endif
-                @if ($hours)
+                @if (filled($hours))
                     <li class="text-slate-500">{{ $hours }}</li>
                 @endif
-                @if (! $phone && ! $email && ! $address)
-                    <li class="text-slate-400">Контакты скоро появятся</li>
+                @if (! filled($phone) && ! filled($email) && ! filled($address))
+                    <li class="text-slate-400">Укажите контакты в админке → Настройки магазина</li>
                 @endif
             </ul>
         </div>
