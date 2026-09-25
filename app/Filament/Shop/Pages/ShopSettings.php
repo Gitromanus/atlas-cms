@@ -4,6 +4,7 @@ namespace App\Filament\Shop\Pages;
 
 use App\Models\Tenant;
 use App\Models\Theme;
+use App\Services\Tenant\TenantContext;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Section;
@@ -36,7 +37,7 @@ class ShopSettings extends Page implements HasForms
 
         $this->form->fill([
             'name' => $tenant->name,
-            'subdomain' => $tenant->subdomain,
+            'slug' => $tenant->slug,
             'theme_id' => $tenant->theme_id,
             'is_active' => $tenant->is_active,
         ]);
@@ -49,13 +50,23 @@ class ShopSettings extends Page implements HasForms
                 Section::make('Основное')
                     ->schema([
                         TextInput::make('name')->label('Название магазина')->required(),
-                        TextInput::make('subdomain')->label('Поддомен')
-                            ->helperText(fn () => 'Витрина: https://{поддомен}.'.config('atlas.root_domain')),
+                        TextInput::make('slug')
+                            ->label('Адрес витрины (slug)')
+                            ->required()
+                            ->alphaDash()
+                            ->helperText(fn () => 'Витрина: '.$this->storefrontUrlPreview()),
                         Select::make('theme_id')->label('Тема витрины')
                             ->options(Theme::query()->pluck('name', 'id')),
                         Toggle::make('is_active')->label('Магазин активен'),
                     ])
                     ->columns(2),
+                Section::make('Свой домен')
+                    ->description('Подключение собственного домена появится в следующем обновлении. Сейчас витрина открывается по адресу платформы с slug магазина.')
+                    ->schema([
+                        Placeholder::make('custom_domain_hint')
+                            ->label('Статус')
+                            ->content(fn () => $this->customDomainStatus()),
+                    ]),
                 Section::make('Обмен с 1С (CommerceML)')
                     ->description('Логин и пароль обмена — это учётная запись владельца магазина (панель /shop).')
                     ->schema([
@@ -71,7 +82,6 @@ class ShopSettings extends Page implements HasForms
                     ->schema([
                         Placeholder::make('exchange_log_link')
                             ->label('Журнал обмена')
-                            // HtmlString — иначе Blade {{ }} экранирует разметку и ссылка покажется текстом
                             ->content(fn () => new \Illuminate\Support\HtmlString(
                                 '<a href="'.url('/shop/exchange-logs').'" class="font-medium text-primary-600 hover:underline">Открыть журнал обмена →</a>'
                             )),
@@ -85,20 +95,32 @@ class ShopSettings extends Page implements HasForms
         $user = auth()->user();
 
         if ($user->isSuperAdmin()) {
-            return \App\Services\Tenant\TenantContext::current()
+            return app(TenantContext::class)->current()
                 ?? Tenant::query()->firstOrFail();
         }
 
         return $user->tenant->loadMissing('theme');
     }
 
+    protected function storefrontUrlPreview(): string
+    {
+        $slug = $this->data['slug'] ?? $this->tenant()->slug;
+
+        return rtrim((string) config('app.url'), '/').'/'.$slug;
+    }
+
+    protected function customDomainStatus(): string
+    {
+        $domain = $this->tenant()->domains()->where('is_primary', true)->value('domain');
+
+        return $domain
+            ? 'Подключён: '.$domain
+            : 'Не подключён — витрина на path платформы (см. адрес выше).';
+    }
+
     protected function exchangeUrl(): string
     {
-        $tenant = $this->tenant();
-        $host = $tenant->domains()->where('is_primary', true)->value('domain')
-            ?? ($tenant->subdomain ? $tenant->subdomain.'.'.config('atlas.root_domain') : null);
-
-        return $host ? 'https://'.$host.'/1c/exchange' : '— задайте поддомен или домен';
+        return $this->tenant()->exchangeUrl();
     }
 
     public function save(): void
@@ -106,9 +128,37 @@ class ShopSettings extends Page implements HasForms
         $data = $this->form->getState();
         $tenant = $this->tenant();
 
+        $reserved = config('atlas.reserved_paths', []);
+        $slug = strtolower((string) ($data['slug'] ?? ''));
+
+        if (in_array($slug, $reserved, true)) {
+            Notification::make()
+                ->title('Slug «'.$slug.'» зарезервирован платформой')
+                ->danger()
+                ->send();
+
+            return;
+        }
+
+        $exists = Tenant::query()
+            ->where('slug', $slug)
+            ->where('id', '!=', $tenant->id)
+            ->exists();
+
+        if ($exists) {
+            Notification::make()
+                ->title('Адрес «'.$slug.'» уже занят другим магазином')
+                ->danger()
+                ->send();
+
+            return;
+        }
+
         $tenant->update([
             'name' => $data['name'],
-            'subdomain' => $data['subdomain'] ?: null,
+            'slug' => $slug,
+            // subdomain синхронизируем со slug (на случай будущего subdomain-режима)
+            'subdomain' => $slug,
             'theme_id' => $data['theme_id'] ?: null,
             'is_active' => $data['is_active'] ?? false,
         ]);
