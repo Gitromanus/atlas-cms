@@ -1,29 +1,30 @@
 # AtlasCMS: проект размещён в documentRoot (public_html на виртуальном хостинге).
 # Все запросы перенаправляются в подкаталог public/ (там лежит index.php Laravel).
+# Директивы написаны совместимо с Apache 2.2 и 2.4 (без Require, который на
+# некоторых хостингах вызывает 500).
 
 <IfModule mod_rewrite.c>
     RewriteEngine On
+    RewriteBase /
 
     # Запросы, уже идущие в public/, не трогаем
     RewriteRule ^public(/|$) - [L,NC]
 
-    # Остальное — в public/
+    # Остальное перенаправляем в public/ (несуществующие файлы/каталоги)
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
     RewriteRule ^(.*)$ public/$1 [L]
 </IfModule>
 
 # ---------------------------------------------------------------------------
 # Защита служебных файлов и каталогов от прямого доступа через HTTP.
-# Проект лежит в корне сайта, поэтому без этого .env, storage, базы и код
-# были бы доступны по URL (например, /.env выдал бы пароль от БД).
 # ---------------------------------------------------------------------------
 
-# Скрытые файлы и чувствительные файлы проекта
-<FilesMatch "^\.">
-    Require all denied
-</FilesMatch>
-
-<FilesMatch "^(artisan|composer\.(json|lock)|package\.json|package-lock\.json|vite\.config\.js|phpunit\.xml|README\.md|LICENSE)$">
-    Require all denied
+# Чувствительные файлы проекта (запрет через mod_access_compat — работает
+# и на Apache 2.2, и на 2.4 без модуля authz_core)
+<FilesMatch "^(\.env|\.env\..*|\.htaccess|artisan|composer\.json|composer\.lock|phpunit\.xml)$">
+    Order allow,deny
+    Deny from all
 </FilesMatch>
 
 # Служебные каталоги: 403 при обращении извне
