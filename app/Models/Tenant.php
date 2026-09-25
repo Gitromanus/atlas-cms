@@ -78,13 +78,39 @@ class Tenant extends Model
     }
 
     /**
-     * URL витрины магазина.
+     * Базовый URL витрины магазина.
+     *
+     * Приоритет:
+     *  1. Свой (кастомный) домен, если подключён;
+     *  2. Path на корневом домене платформы: https://{root}/{slug}
+     *  3. Поддомен (если routing=subdomain).
      */
     public function url(): string
     {
-        $primary = $this->domains()->where('is_primary', true)->value('domain')
-            ?? ($this->subdomain ? $this->subdomain.'.'.config('atlas.root_domain') : null);
+        $primary = $this->domains()->where('is_primary', true)->value('domain');
 
-        return $primary ? 'https://'.$primary : '#';
+        if ($primary) {
+            return 'https://'.$primary;
+        }
+
+        $root = rtrim((string) config('app.url'), '/');
+        $routing = config('atlas.tenant_routing', 'path');
+
+        if ($routing === 'subdomain' && $this->subdomain) {
+            $rootDomain = config('atlas.root_domain');
+
+            return 'https://'.$this->subdomain.'.'.$rootDomain;
+        }
+
+        // Path-режим (по умолчанию) — работает на shared-хостинге без wildcard DNS
+        return $root.'/'.$this->slug;
+    }
+
+    /**
+     * URL точки обмена с 1С для этого магазина.
+     */
+    public function exchangeUrl(): string
+    {
+        return rtrim($this->url(), '/').'/1c/exchange';
     }
 }

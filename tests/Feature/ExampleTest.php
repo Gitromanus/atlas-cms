@@ -2,10 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Models\Product;
 use App\Models\Tenant;
 use App\Models\Theme;
-use App\Services\Tenant\TenantContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -17,7 +15,7 @@ class ExampleTest extends TestCase
     {
         $theme = Theme::query()->firstOrCreate(['slug' => 'default'], ['name' => 'Default']);
 
-        $tenant = Tenant::query()->create([
+        Tenant::query()->create([
             'name' => 'Демо-магазин',
             'subdomain' => 'demo',
             'slug' => 'demo',
@@ -25,11 +23,18 @@ class ExampleTest extends TestCase
             'is_active' => true,
         ]);
 
-        app(TenantContext::class)->set($tenant);
-
-        $response = $this->get('http://demo.atlascms.ru/');
+        // Path-based витрина: /{slug}/
+        $response = $this->get('/demo');
 
         $response->assertOk();
         $response->assertSee('Демо-магазин');
+    }
+
+    public function test_platform_landing_on_root(): void
+    {
+        $response = $this->get('/');
+
+        $response->assertOk();
+        $response->assertSee('AtlasCMS');
     }
 }
