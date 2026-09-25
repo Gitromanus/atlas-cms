@@ -3,6 +3,7 @@
 namespace App\Providers\Filament;
 
 use App\Http\Middleware\SetFilamentTenant;
+use App\Models\Tenant;
 use App\Services\Tenant\TenantContext;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
@@ -39,7 +40,7 @@ class ShopPanelProvider extends PanelProvider
     }
 
     /**
-     * Ссылка на витрину текущего магазина владельца.
+     * Ссылка на витрину текущего магазина владельца (/ {slug} ).
      */
     protected function shopUrl(): string
     {
@@ -49,11 +50,32 @@ class ShopPanelProvider extends PanelProvider
             return '#';
         }
 
-        // В контексте панели /shop тенант — магазин владельца (либо контекст запроса)
-        $tenant = $user->tenant ?? app(TenantContext::class)->current();
+        $tenant = $user->relationLoaded('tenant')
+            ? $user->tenant
+            : $user->tenant()->first();
 
-        return $tenant?->url() ?? '#';
+        if ($tenant === null && $user->tenant_id) {
+            $tenant = Tenant::query()->find($user->tenant_id);
+        }
+
+        if ($tenant === null) {
+            $tenant = app(TenantContext::class)->current();
+        }
+
+        if ($tenant === null) {
+            return '#';
+        }
+
+        $slug = $tenant->slug ?: $tenant->subdomain;
+
+        if ($slug === null || $slug === '') {
+            return '#';
+        }
+
+        // Явно path-витрина, без зависимости от кривого APP_URL
+        return url('/'.$slug);
     }
+
     public function panel(Panel $panel): Panel
     {
         return $panel
@@ -65,14 +87,13 @@ class ShopPanelProvider extends PanelProvider
             ->colors([
                 'primary' => Color::Indigo,
             ])
-            // Тёмная тема панели (по системным настройкам) — согласуется с тёмными темами витрин
             ->darkMode(true)
-            ->discoverResources(in: app_path('Filament/Shop/Resources'), for: 'App\\Filament\\Shop\\Resources')
-            ->discoverPages(in: app_path('Filament/Shop/Pages'), for: 'App\\Filament\\Shop\\Pages')
+            ->discoverResources(in: app_path('Filament/Shop/Resources'), for: 'App\Filament\Shop\Resources')
+            ->discoverPages(in: app_path('Filament/Shop/Pages'), for: 'App\Filament\Shop\Pages')
             ->pages([
                 Pages\Dashboard::class,
             ])
-            ->discoverWidgets(in: app_path('Filament/Shop/Widgets'), for: 'App\\Filament\\Shop\\Widgets')
+            ->discoverWidgets(in: app_path('Filament/Shop/Widgets'), for: 'App\Filament\Shop\Widgets')
             ->widgets([
                 Widgets\AccountWidget::class,
                 \App\Filament\Shop\Widgets\ShopStats::class,
@@ -87,7 +108,6 @@ class ShopPanelProvider extends PanelProvider
                 SubstituteBindings::class,
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
-                // Контекст магазина владельца (изоляция данных)
                 SetFilamentTenant::class,
             ])
             ->authMiddleware([
