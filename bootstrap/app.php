@@ -13,8 +13,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
-        // Определение магазина (path /{slug} или свой домен) для всех веб-запросов
-        $middleware->web(append: [
+        // ResolveTenant ДО SubstituteBindings: иначе binding товара/категории
+        // идёт без TenantContext и ломает изоляцию на витрине.
+        $middleware->web(prepend: [
             ResolveTenant::class,
         ]);
 
@@ -22,7 +23,6 @@ return Application::configure(basePath: dirname(__DIR__))
             'tenant' => EnsureTenant::class,
         ]);
 
-        // Обмен с 1С: CSRF не применяется (Basic Auth / session_id)
         $middleware->validateCsrfTokens(except: [
             '1c/*',
             '*/1c/*',
