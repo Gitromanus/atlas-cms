@@ -130,4 +130,53 @@ class ShopAdminFormsTest extends TestCase
             ->assertSee('Цена')
             ->assertSee('Остаток');
     }
+
+    public function test_product_search_filters_by_name_and_sku(): void
+    {
+        $theme = Theme::query()->create(['slug' => 'default', 'name' => 'Default']);
+        $tenant = Tenant::query()->create([
+            'name' => 'Тест-магазин',
+            'subdomain' => 'test',
+            'slug' => 'testshop',
+            'theme_id' => $theme->id,
+            'is_active' => true,
+        ]);
+
+        $user = User::query()->create([
+            'tenant_id' => $tenant->id,
+            'name' => 'Владелец',
+            'email' => 'owner@test.ru',
+            'password' => Hash::make('secret123'),
+        ]);
+
+        $first = Product::query()->create([
+            'tenant_id' => $tenant->id,
+            'ext_id' => 'prod-search-1',
+            'name' => 'АКБ Аком 60 Ач',
+            'sku' => 'AKB-ACOM-60',
+            'is_active' => true,
+        ]);
+
+        $second = Product::query()->create([
+            'tenant_id' => $tenant->id,
+            'ext_id' => 'prod-search-2',
+            'name' => 'Масло моторное 5W-40',
+            'sku' => 'OIL-5W40',
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($user);
+
+        // Поиск по названию
+        Livewire::test(ListProducts::class)
+            ->set('tableSearch', 'Аком')
+            ->assertCanSeeTableRecords([$first])
+            ->assertCanNotSeeTableRecords([$second]);
+
+        // Поиск по артикулу
+        Livewire::test(ListProducts::class)
+            ->set('tableSearch', 'OIL-5W40')
+            ->assertCanSeeTableRecords([$second])
+            ->assertCanNotSeeTableRecords([$first]);
+    }
 }

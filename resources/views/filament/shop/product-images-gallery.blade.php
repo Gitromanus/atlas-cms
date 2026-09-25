@@ -19,10 +19,11 @@
              class="aspect-square w-full rounded-lg object-cover"
              style="max-height: 260px">
         @if (count($urls) > 1)
-            <div class="grid grid-cols-5 gap-1.5">
+            {{-- Компактные миниатюры: ~3 в ряд, остальные — горизонтальной прокруткой --}}
+            <div class="flex gap-1.5 overflow-x-auto pb-1">
                 <template x-for="(url, i) in urls" :key="i">
                     <img :src="url" alt="" @click="active = i"
-                         class="aspect-square w-full cursor-pointer rounded object-cover ring-1 ring-gray-200"
+                         class="h-16 w-16 shrink-0 cursor-pointer rounded object-cover ring-1 ring-gray-200"
                          :class="active === i ? 'ring-2 ring-primary-500' : ''">
                 </template>
             </div>

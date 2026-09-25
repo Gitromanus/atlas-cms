@@ -20,16 +20,24 @@
         @endif
 
         @php
-            // Только реальные комбинации из 1С: значения, которых нет в вариантах товара, не показываются
+            // Только реальные комбинации из 1С: значения, которых нет в вариантах товара, не показываются.
+            // Порядок значений — из админки (теги options), а не по алфавиту
             $cardCombos = $product->variants->filter(fn ($variant) => filled($variant->options));
             $cardVariantValues = $product->variantFeatures()
                 ->filter(fn ($feature) => filled($feature->options))
                 ->map(function ($feature) use ($cardCombos) {
-                    $values = $cardCombos->pluck('options.'.$feature->name)
+                    $existing = $cardCombos->pluck('options.'.$feature->name)
                         ->filter()
                         ->unique()
-                        ->sort()
                         ->values();
+
+                    $values = collect($feature->options ?? [])
+                        ->filter(fn ($value): bool => $existing->contains($value))
+                        ->values();
+
+                    if ($values->isEmpty()) {
+                        $values = $existing;
+                    }
 
                     return ['name' => $feature->name, 'values' => $values];
                 })

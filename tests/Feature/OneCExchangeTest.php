@@ -515,12 +515,13 @@ XML;
         $this->assertTrue($color->is_variant);
         $this->assertSame(['Красный', 'Синий'], $color->options);
 
-        // Характеристика «Размер» из ХарактеристикиТовара
+        // Характеристика «Размер» из ХарактеристикиТовара: value — первое значение из 1С,
+        // options отсортированы по алфавиту (автосортировка новых значений)
         $size = $product->features()->where('name', 'Размер')->first();
         $this->assertNotNull($size);
         $this->assertSame('M', $size->value);
         $this->assertTrue($size->is_variant);
-        $this->assertSame(['M', 'L'], $size->options);
+        $this->assertSame(['L', 'M'], $size->options);
     }
 
     public function test_xml_utils_ids_supports_direct_and_nested_id(): void

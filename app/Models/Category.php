@@ -179,6 +179,83 @@ class Category extends Model
         return $ids;
     }
 
+    private static ?array $productCountsMap = null;
+
+    private static ?int $productCountsTenantId = null;
+
+    /**
+     * Количество товаров в категории вместе со всеми подкатегориями (для админки).
+     * Считается одним запросом на тенанта и кэшируется на время запроса.
+     */
+    public function productCountWithChildren(): int
+    {
+        $tenantId = app(TenantContext::class)->id();
+
+        if (self::$productCountsMap === null || self::$productCountsTenantId !== $tenantId) {
+            self::$productCountsTenantId = $tenantId;
+            self::$productCountsMap = static::buildProductCountsMap($tenantId);
+        }
+
+        return self::$productCountsMap[$this->id] ?? (int) $this->products_count;
+    }
+
+    /**
+     * Строит карту «id категории → количество товаров вместе с подкатегориями».
+     *
+     * @return array<int, int>
+     */
+    protected static function buildProductCountsMap(int $tenantId): array
+    {
+        $categories = static::query()
+            ->where('tenant_id', $tenantId)
+            ->withCount('products')
+            ->get();
+
+        if ($categories->isEmpty()) {
+            return [];
+        }
+
+        $byId = $categories->keyBy('id');
+
+        foreach ($categories as $category) {
+            $category->setRelation('children', new EloquentCollection());
+        }
+
+        foreach ($categories as $category) {
+            if ($category->parent_id !== null && $byId->has($category->parent_id)) {
+                $byId[$category->parent_id]->children->push($category);
+            }
+        }
+
+        $visited = [];
+        $map = [];
+
+        // Суммируем снизу вверх: у родителя складываются прямые товары и товары всех потомков
+        $compute = function (Category $node) use (&$compute, &$visited, &$map): int {
+            if (isset($visited[$node->id])) {
+                return $map[$node->id] ?? 0;
+            }
+
+            $visited[$node->id] = true;
+
+            $total = (int) $node->products_count;
+
+            foreach ($node->children as $child) {
+                $total += $compute($child);
+            }
+
+            $map[$node->id] = $total;
+
+            return $total;
+        };
+
+        foreach ($categories as $category) {
+            $compute($category);
+        }
+
+        return $map;
+    }
+
     private static ?array $parentsMap = null;
 
     private static ?int $parentsMapTenantId = null;

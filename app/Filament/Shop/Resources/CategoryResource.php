@@ -66,7 +66,8 @@ class CategoryResource extends Resource
                     }),
                 Tables\Columns\TextColumn::make('products_count')
                     ->label('Товаров')
-                    ->counts('products'),
+                    // Сумма прямых товаров и товаров всех подкатегорий (один запрос на таблицу)
+                    ->state(fn (Category $record): int => $record->productCountWithChildren()),
                 Tables\Columns\IconColumn::make('is_active')
                     ->label('Активна')
                     ->boolean(),

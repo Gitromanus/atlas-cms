@@ -129,6 +129,37 @@ class Product extends Model
     }
 
     /**
+     * Минимальная и максимальная цена среди вариантов (для списка товаров).
+     *
+     * @return array{min: float, max: float}|null
+     */
+    public function variantPriceRange(): ?array
+    {
+        $prices = $this->variants
+            ->pluck('price')
+            ->filter(fn ($price): bool => $price !== null)
+            ->map(fn ($price): float => (float) $price)
+            ->values();
+
+        if ($prices->isEmpty()) {
+            return null;
+        }
+
+        return [
+            'min' => $prices->min(),
+            'max' => $prices->max(),
+        ];
+    }
+
+    /**
+     * Суммарный остаток всех вариантов (для списка товаров).
+     */
+    public function variantStockTotal(): float
+    {
+        return (float) $this->variants->sum('quantity');
+    }
+
+    /**
      * Нормализация карты «имя свойства → значение» для сравнения без учёта порядка ключей.
      */
     protected function normalizeOptionsMap(array $map): array

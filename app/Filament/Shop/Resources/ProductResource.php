@@ -97,6 +97,8 @@ class ProductResource extends Resource
                         Forms\Components\Repeater::make('features')
                             ->relationship('features')
                             ->label('Характеристики товара')
+                            // Порядок сохраняется в sort_order (без orderColumn Filament его не пишет)
+                            ->orderColumn('sort_order')
                             ->itemLabel(fn (array $state): ?string => filled($state['name'] ?? null)
                                 ? trim(($state['name'] ?? '').(filled($state['value'] ?? null) ? ': '.$state['value'] : ''))
                                 : null)
@@ -112,7 +114,8 @@ class ProductResource extends Resource
                                 Forms\Components\TagsInput::make('options')
                                     ->label('Варианты значений')
                                     ->placeholder('Добавить значение…')
-                                    ->helperText('Перетаскивайте теги для ручного порядка; на витрине значения сортируются по алфавиту'),
+                                    ->reorderable()
+                                    ->helperText('Перетаскивайте теги для ручного порядка; новые значения из 1С добавляются по алфавиту'),
                             ])
                             ->columns(2)
                             ->defaultItems(0)
@@ -198,12 +201,22 @@ class ProductResource extends Resource
         return app(\App\Services\Tenant\TenantContext::class)->current()?->slug ?? 'common';
     }
 
+    public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
+    {
+        // Миникартинка и колонки «цена/остаток вариантов» используют отношения
+        return parent::getEloquentQuery()->with(['mainImage', 'variants']);
+    }
+
     public static function table(Table $table): Table
     {
         return $table
             // Без перехода на страницу редактирования по клику на строку — редактирование в модале
             ->recordUrl(null)
             ->columns([
+                Tables\Columns\ImageColumn::make('mainImage.url')
+                    ->label('')
+                    ->circular()
+                    ->size(40),
                 Tables\Columns\TextColumn::make('name')
                     ->label('Название')
                     ->searchable()
@@ -214,11 +227,28 @@ class ProductResource extends Resource
                     ->searchable(),
                 Tables\Columns\TextColumn::make('price')
                     ->label('Цена')
-                    ->money('RUB')
-                    ->sortable(),
+                    // Для товаров с вариантами — диапазон цен вариантов, иначе обычная цена
+                    ->state(function (Product $record): ?string {
+                        $range = $record->variantPriceRange();
+
+                        if ($range !== null) {
+                            $min = number_format($range['min'], 0, ',', ' ');
+                            $max = number_format($range['max'], 0, ',', ' ');
+
+                            return $min === $max ? $min.' ₽' : $min.' – '.$max.' ₽';
+                        }
+
+                        return $record->price !== null
+                            ? number_format($record->price, 0, ',', ' ').' ₽'
+                            : null;
+                    })
+                    ->placeholder('—'),
                 Tables\Columns\TextColumn::make('stockTotal')
                     ->label('Остаток')
-                    ->state(fn (Product $record): float => $record->stockTotal())
+                    // У товаров с вариантами остаток считается по вариантам
+                    ->state(fn (Product $record): float => $record->hasVariants()
+                        ? $record->variantStockTotal()
+                        : $record->stockTotal())
                     ->formatStateUsing(fn (float $state): string => number_format($state, 0, ',', ' '))
                     ->badge()
                     ->color(fn (float $state): string => $state > 0 ? 'success' : 'gray'),

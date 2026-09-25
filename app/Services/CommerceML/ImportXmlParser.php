@@ -86,6 +86,9 @@ class ImportXmlParser
                         }
 
                         if ($names !== []) {
+                            // Новые значения — по алфавиту; ручной порядок из админки при слиянии не перезаписывается
+                            usort($names, static fn (string $a, string $b): int => mb_strtolower($a) <=> mb_strtolower($b));
+
                             $variantProperties[$id] = [
                                 'values' => $values,
                                 'names' => $names,
@@ -234,11 +237,16 @@ class ImportXmlParser
                     }
                 }
 
+                // Новые значения — по алфавиту (ручной порядок из админки при слиянии не перезаписывается);
+                // value оставляем первым значением из 1С, чтобы не менять семантику характеристики
+                $options = $names;
+                usort($options, static fn (string $a, string $b): int => mb_strtolower($a) <=> mb_strtolower($b));
+
                 $features[] = [
                     'name' => $name,
                     'value' => $names[0] ?? '',
                     'is_variant' => true,
-                    'options' => $names,
+                    'options' => $options,
                 ];
             }
         }
