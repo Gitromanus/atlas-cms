@@ -301,6 +301,109 @@ XML;
         $this->assertSame(7.0, (float) $product->stocks()->sum('quantity'));
     }
 
+    public function test_offers_with_variant_suffix_import_prices_stocks_and_features(): void
+    {
+        // Товар с характеристиками (как выгружает 1С УТ: Ид предложения = «ИдТовара#ИдВарианта»)
+        $category = Category::query()->create([
+            'tenant_id' => $this->tenant->id,
+            'name' => 'Шапки',
+            'ext_id' => 'cat-hat',
+        ]);
+
+        $product = Product::query()->create([
+            'tenant_id' => $this->tenant->id,
+            'category_id' => $category->id,
+            'name' => 'Шапка тонкая демисезонная',
+            'sku' => 'HAT-001',
+            'ext_id' => 'prod-hat',
+        ]);
+
+        $checkauth = $this->get('http://test.atlascms.ru/1c/exchange?type=catalog&mode=checkauth', $this->basicHeaders());
+        $sessionId = explode("\n", $checkauth->getContent())[1];
+
+        $offersXml = <<<'XML'
+<?xml version="1.0" encoding="utf-8"?>
+<КоммерческаяИнформация ВерсияСхемы="2.09">
+  <ПакетПредложений>
+    <ТипыЦен>
+      <ТипЦены><Ид>pt-1</Ид><Наименование>Розничная</Наименование><Валюта>RUB</Валюта></ТипЦены>
+    </ТипыЦен>
+    <Склады>
+      <Склад><Ид>wh-1</Ид><Наименование>Основной склад</Наименование></Склад>
+    </Склады>
+    <Предложения>
+      <Предложение>
+        <Ид>prod-hat#variant-black-44</Ид>
+        <Наименование>Шапка тонкая демисезонная (44, Черный)</Наименование>
+        <Артикул/>
+        <ХарактеристикиТовара>
+          <ХарактеристикаТовара><Наименование>Размер (Одежда)</Наименование><Значение>44</Значение></ХарактеристикаТовара>
+          <ХарактеристикаТовара><Наименование>Цвет (Одежда)</Наименование><Значение>Черный</Значение></ХарактеристикаТовара>
+        </ХарактеристикиТовара>
+        <Цены>
+          <Цена><ИдТипаЦены>pt-1</ИдТипаЦены><ЦенаЗаЕдиницу>500</ЦенаЗаЕдиницу><Валюта>RUB</Валюта></Цена>
+        </Цены>
+        <Количество>20</Количество>
+      </Предложение>
+      <Предложение>
+        <Ид>prod-hat#variant-black-46</Ид>
+        <Наименование>Шапка тонкая демисезонная (46, Черный)</Наименование>
+        <Артикул/>
+        <ХарактеристикиТовара>
+          <ХарактеристикаТовара><Наименование>Размер (Одежда)</Наименование><Значение>46</Значение></ХарактеристикаТовара>
+          <ХарактеристикаТовара><Наименование>Цвет (Одежда)</Наименование><Значение>Черный</Значение></ХарактеристикаТовара>
+        </ХарактеристикиТовара>
+        <Цены>
+          <Цена><ИдТипаЦены>pt-1</ИдТипаЦены><ЦенаЗаЕдиницу>500</ЦенаЗаЕдиницу><Валюта>RUB</Валюта></Цена>
+        </Цены>
+        <Количество>30</Количество>
+      </Предложение>
+    </Предложения>
+  </ПакетПредложений>
+</КоммерческаяИнформация>
+XML;
+
+        $this->postRaw(
+            "http://test.atlascms.ru/1c/exchange?type=catalog&mode=file&filename=offers.xml&session_id={$sessionId}",
+            $offersXml
+        )->assertOk();
+
+        $this->post(
+            "http://test.atlascms.ru/1c/exchange?type=catalog&mode=import&filename=offers.xml&session_id={$sessionId}",
+            [],
+            $this->basicHeaders()
+        )->assertOk();
+
+        $priceType = PriceType::query()->where('ext_id', 'pt-1')->first();
+        $this->assertNotNull($priceType);
+
+        $this->assertDatabaseHas('product_prices', [
+            'product_id' => $product->id,
+            'price_type_id' => $priceType->id,
+            'price' => '500.00',
+        ]);
+
+        $warehouse = Warehouse::query()->where('ext_id', 'wh-1')->first();
+        $this->assertNotNull($warehouse);
+
+        $this->assertDatabaseHas('product_stocks', [
+            'product_id' => $product->id,
+            'warehouse_id' => $warehouse->id,
+            'quantity' => '50.000',
+        ]);
+
+        // Вариантные характеристики объединились: Размер [44, 46], Цвет [Черный]
+        $size = ProductFeature::query()->where('product_id', $product->id)->where('name', 'Размер (Одежда)')->first();
+        $this->assertNotNull($size);
+        $this->assertTrue((bool) $size->is_variant);
+        $this->assertSame(['44', '46'], $size->options);
+
+        $color = ProductFeature::query()->where('product_id', $product->id)->where('name', 'Цвет (Одежда)')->first();
+        $this->assertNotNull($color);
+        $this->assertTrue((bool) $color->is_variant);
+        $this->assertSame(['Черный'], $color->options);
+    }
+
     public function test_catalog_import_resolves_property_values_and_characteristics(): void
     {
         $checkauth = $this->get('http://test.atlascms.ru/1c/exchange?type=catalog&mode=checkauth', $this->basicHeaders());

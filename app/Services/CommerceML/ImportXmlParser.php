@@ -230,16 +230,35 @@ class ImportXmlParser
             }
         }
 
-        $product->features()->delete();
+        // Удаляем только «каталожные» свойства: вариантные (цвет/размер) приходят из
+        // предложений (offers.xml) и должны сохраняться между прогонами каталога.
+        $product->features()->where('is_variant', false)->delete();
 
         foreach ($features as $feature) {
+            if ($feature['is_variant']) {
+                ProductFeature::query()->updateOrCreate(
+                    [
+                        'tenant_id' => $product->tenant_id,
+                        'product_id' => $product->id,
+                        'name' => $feature['name'],
+                    ],
+                    [
+                        'value' => $feature['value'],
+                        'is_variant' => true,
+                        'options' => $feature['options'],
+                    ]
+                );
+
+                continue;
+            }
+
             ProductFeature::query()->create([
                 'tenant_id' => $product->tenant_id,
                 'product_id' => $product->id,
                 'name' => $feature['name'],
                 'value' => $feature['value'],
-                'is_variant' => $feature['is_variant'],
-                'options' => $feature['options'],
+                'is_variant' => false,
+                'options' => null,
             ]);
         }
     }
@@ -254,8 +273,9 @@ class ImportXmlParser
             }
         }
 
-        // Удаляем только внешние ссылки из 1С — локально загруженные файлы сохраняются
-        $product->images()->whereNull('path')->delete();
+        // Пересоздаём только картинки, пришедшие из 1С (source=1c).
+        // Локально загруженные в админке (source=manual) сохраняются.
+        $product->images()->where('source', '1c')->delete();
 
         $startOrder = ((int) $product->images()->max('sort_order')) + 1;
 
@@ -276,6 +296,7 @@ class ImportXmlParser
                 'product_id' => $product->id,
                 'url' => $externalUrl,
                 'path' => $localPath,
+                'source' => '1c',
                 'sort_order' => $startOrder + $index,
             ]);
         }

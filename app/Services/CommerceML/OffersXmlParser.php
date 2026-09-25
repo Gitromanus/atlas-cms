@@ -4,6 +4,7 @@ namespace App\Services\CommerceML;
 
 use App\Models\PriceType;
 use App\Models\Product;
+use App\Models\ProductFeature;
 use App\Models\ProductPrice;
 use App\Models\ProductStock;
 use App\Models\Warehouse;
@@ -108,10 +109,12 @@ class OffersXmlParser
             return;
         }
 
-        $product = Product::query()->where('ext_id', $extId)->first();
+        // У вариантов Ид предложения имеет вид «{ИдТовара}#{ИдВарианта}» — сопоставляем по базовой части
+        $baseExtId = strtok($extId, '#');
 
-        // У товаров с характеристиками Ид предложения может отличаться от Ид товара.
-        // Пробуем сопоставить по артикулу или уникальному наименованию.
+        $product = Product::query()->where('ext_id', $baseExtId)->first();
+
+        // Если Ид не совпал — пробуем сопоставить по артикулу или уникальному наименованию.
         if ($product === null) {
             $tenantId = app(TenantContext::class)->id();
 
@@ -139,6 +142,9 @@ class OffersXmlParser
         }
 
         $tenantId = $product->tenant_id;
+
+        // Вариантные характеристики (цвет, размер) из предложений
+        $this->syncVariantFeatures($product, $offer);
 
         // Цены
         $priceTypes = PriceType::query()
@@ -200,16 +206,80 @@ class OffersXmlParser
             );
         }
 
-        // Если остатки по складам не указаны — единый остаток на первом складе магазина
+        // Если остатки по складам не указаны — единый остаток на первом складе магазина.
+        // У вариантов (Ид «{товар}#{вариант}») остатки складываются в общий остаток товара.
         if ($stockRows === []) {
             $warehouseId = $warehouses->first();
 
             if ($warehouseId !== null) {
-                ProductStock::query()->updateOrCreate(
-                    ['product_id' => $product->id, 'warehouse_id' => $warehouseId],
-                    ['tenant_id' => $tenantId, 'quantity' => $quantityTotal]
-                );
+                $stock = ProductStock::query()
+                    ->where('product_id', $product->id)
+                    ->where('warehouse_id', $warehouseId)
+                    ->first();
+
+                if ($stock === null) {
+                    ProductStock::query()->create([
+                        'tenant_id' => $tenantId,
+                        'product_id' => $product->id,
+                        'warehouse_id' => $warehouseId,
+                        'quantity' => $quantityTotal,
+                    ]);
+                } elseif ($baseExtId !== $extId) {
+                    $stock->increment('quantity', $quantityTotal);
+                } else {
+                    $stock->update(['quantity' => $quantityTotal]);
+                }
             }
+        }
+    }
+
+    /**
+     * Характеристики предложений (цвет, размер и т.п.) → вариантные свойства товара.
+     *
+     * Значения из всех предложений товара объединяются в options для выбора на витрине.
+     */
+    protected function syncVariantFeatures(Product $product, SimpleXMLElement $offer): void
+    {
+        if (! isset($offer->ХарактеристикиТовара->ХарактеристикаТовара)) {
+            return;
+        }
+
+        foreach ($offer->ХарактеристикиТовара->ХарактеристикаТовара as $char) {
+            $name = trim(XmlUtils::child($char, 'Наименование') ?? '');
+            $value = trim(XmlUtils::child($char, 'Значение') ?? '');
+
+            if ($name === '' || $value === '') {
+                continue;
+            }
+
+            $feature = ProductFeature::query()
+                ->where('tenant_id', $product->tenant_id)
+                ->where('product_id', $product->id)
+                ->where('name', $name)
+                ->first();
+
+            if ($feature === null) {
+                ProductFeature::query()->create([
+                    'tenant_id' => $product->tenant_id,
+                    'product_id' => $product->id,
+                    'name' => $name,
+                    'value' => $value,
+                    'is_variant' => true,
+                    'options' => [$value],
+                ]);
+
+                continue;
+            }
+
+            $options = $feature->options ?? [];
+            if (! in_array($value, $options, true)) {
+                $options[] = $value;
+            }
+
+            $feature->update([
+                'is_variant' => true,
+                'options' => $options,
+            ]);
         }
     }
 }

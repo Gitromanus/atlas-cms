@@ -65,6 +65,9 @@ class ProductResource extends Resource
                         Forms\Components\Repeater::make('features')
                             ->relationship('features')
                             ->label('Характеристики товара')
+                            ->itemLabel(fn (array $state): ?string => filled($state['name'] ?? null)
+                                ? trim(($state['name'] ?? '').(filled($state['value'] ?? null) ? ': '.$state['value'] : ''))
+                                : null)
                             ->schema([
                                 Forms\Components\TextInput::make('name')
                                     ->label('Название')
@@ -93,6 +96,9 @@ class ProductResource extends Resource
                         Forms\Components\Repeater::make('prices')
                             ->relationship('prices')
                             ->label('Цены')
+                            ->itemLabel(fn (array $state): ?string => isset($state['price'])
+                                ? 'Цена: '.number_format((float) $state['price'], 2, ',', ' ')
+                                : null)
                             ->schema([
                                 Forms\Components\Select::make('price_type_id')
                                     ->label('Тип цены')
@@ -110,6 +116,9 @@ class ProductResource extends Resource
                         Forms\Components\Repeater::make('stocks')
                             ->relationship('stocks')
                             ->label('Остатки по складам')
+                            ->itemLabel(fn (array $state): ?string => isset($state['quantity'])
+                                ? 'Остаток: '.number_format((float) $state['quantity'], 0, ',', ' ')
+                                : null)
                             ->schema([
                                 Forms\Components\Select::make('warehouse_id')
                                     ->label('Склад')
@@ -126,19 +135,23 @@ class ProductResource extends Resource
                             ->collapsible(),
                     ]),
                 Forms\Components\Section::make('Изображения')
-                    ->description('Загрузите файлы или укажите внешние ссылки (из 1С). Локальные файлы имеют приоритет.')
+                    ->description('Картинки из 1С показаны превью. Новые файлы загружаются кнопкой ниже и сохраняются вместе с товаром.')
                     ->schema([
                         Forms\Components\Repeater::make('images')
                             ->relationship('images')
                             ->label('Изображения товара')
+                            ->itemLabel(fn (array $state): ?string => filled($state['path'] ?? null)
+                                ? basename((string) $state['path'])
+                                : ($state['url'] ?? null))
                             ->schema([
-                                Forms\Components\FileUpload::make('path')
-                                    ->label('Файл (локальная загрузка)')
-                                    ->disk('public')
-                                    ->directory(fn () => 'products/'.self::tenantSlug())
-                                    ->image()
-                                    ->imageEditor()
-                                    ->columnSpanFull(),
+                                Forms\Components\ViewField::make('preview')
+                                    ->view('filament.shop.product-image-preview')
+                                    ->dehydrated(false)
+                                    ->columnSpan(2),
+                                Forms\Components\TextInput::make('path')
+                                    ->label('Путь к файлу')
+                                    ->disabled()
+                                    ->dehydrated(false),
                                 Forms\Components\TextInput::make('url')
                                     ->label('Внешняя ссылка (из 1С)')
                                     ->url()
@@ -152,6 +165,15 @@ class ProductResource extends Resource
                             ->defaultItems(0)
                             ->reorderableWithButtons()
                             ->collapsible(),
+                        Forms\Components\FileUpload::make('new_images')
+                            ->label('Добавить новые изображения')
+                            ->helperText('Загруженные файлы будут добавлены к товару после сохранения')
+                            ->disk('public')
+                            ->directory(fn () => 'products/'.self::tenantSlug().'/'.now()->format('Y/m'))
+                            ->image()
+                            ->multiple()
+                            ->reorderable()
+                            ->columnSpanFull(),
                     ]),
             ]);
     }
