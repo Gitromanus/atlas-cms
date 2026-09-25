@@ -15,49 +15,76 @@ use App\Models\Warehouse;
 use App\Services\Tenant\TenantContext;
 use Illuminate\Database\Seeder;
 
-/**
- * Демо-каталог «одежда и обувь» для магазина владельца test@test.ru
- * (slug odeza-i-obuv) или любого переданного tenant.
- *
- * Идемпотентно: повторный seed не дублирует товары (по sku).
- */
 class FashionDemoSeeder extends Seeder
 {
     public function run(): void
     {
-        $tenant = $this->resolveTenant();
+        $tenants = $this->resolveTenants();
 
-        if ($tenant === null) {
-            $this->command?->warn('FashionDemoSeeder: магазин не найден (test@test.ru / odeza-i-obuv) — пропуск.');
+        if ($tenants->isEmpty()) {
+            $this->command?->warn('FashionDemoSeeder: подходящих магазинов не найдено.');
 
             return;
         }
 
-        $this->seedCatalog($tenant);
-        $this->command?->info('FashionDemoSeeder: каталог для «'.$tenant->name.'» (/'.$tenant->slug.') готов.');
+        foreach ($tenants as $tenant) {
+            $this->seedCatalog($tenant);
+            $this->command?->info('FashionDemoSeeder: «'.$tenant->name.'» (/'.$tenant->slug.') — каталог готов.');
+        }
     }
 
-    protected function resolveTenant(): ?Tenant
+    protected function resolveTenants()
     {
-        $user = User::query()->where('email', 'test@test.ru')->first();
+        $found = collect();
 
+        $user = User::query()->whereRaw('LOWER(email) = ?', ['test@test.ru'])->first();
         if ($user?->tenant_id) {
-            return Tenant::query()->find($user->tenant_id);
+            $t = Tenant::query()->find($user->tenant_id);
+            if ($t) {
+                $found->push($t);
+            }
         }
 
-        return Tenant::query()->where('slug', 'odeza-i-obuv')->first();
+        foreach (['odeza-i-obuv', 'odezhda-i-obuv', 'odezhda'] as $slug) {
+            $t = Tenant::query()->where('slug', $slug)->first();
+            if ($t) {
+                $found->push($t);
+            }
+        }
+
+        $found = $found->merge(
+            Tenant::query()
+                ->where(function ($q) {
+                    $q->where('slug', 'like', '%odeza%')
+                        ->orWhere('slug', 'like', '%odezh%')
+                        ->orWhere('name', 'like', '%дежд%')
+                        ->orWhere('name', 'like', '%дёж%')
+                        ->orWhere('name', 'like', '%Одеж%');
+                })
+                ->get()
+        );
+
+        $found = $found->merge(
+            Tenant::query()
+                ->where('slug', '!=', 'demo')
+                ->where('is_active', true)
+                ->whereDoesntHave('products')
+                ->get()
+        );
+
+        return $found->unique('id')->values();
     }
 
     public function seedCatalog(Tenant $tenant): void
     {
         app(TenantContext::class)->set($tenant);
 
-        $priceType = PriceType::query()->firstOrCreate(
+        $priceType = PriceType::withoutGlobalScopes()->firstOrCreate(
             ['tenant_id' => $tenant->id, 'name' => 'Розничная'],
             ['currency' => 'RUB']
         );
 
-        $warehouse = Warehouse::query()->firstOrCreate(
+        $warehouse = Warehouse::withoutGlobalScopes()->firstOrCreate(
             ['tenant_id' => $tenant->id, 'name' => 'Основной склад'],
             []
         );
@@ -71,7 +98,7 @@ class FashionDemoSeeder extends Seeder
         $categoryIds = [];
 
         foreach ($categories as $slug => $meta) {
-            $cat = Category::query()->firstOrCreate(
+            $cat = Category::withoutGlobalScopes()->firstOrCreate(
                 ['tenant_id' => $tenant->id, 'slug' => $slug],
                 [
                     'name' => $meta['name'],
@@ -90,7 +117,7 @@ class FashionDemoSeeder extends Seeder
         ];
 
         foreach ($sub as $row) {
-            $cat = Category::query()->firstOrCreate(
+            $cat = Category::withoutGlobalScopes()->firstOrCreate(
                 ['tenant_id' => $tenant->id, 'slug' => $row['slug']],
                 [
                     'name' => $row['name'],
@@ -121,7 +148,7 @@ class FashionDemoSeeder extends Seeder
         ];
 
         foreach ($products as $spec) {
-            $product = Product::query()->updateOrCreate(
+            $product = Product::withoutGlobalScopes()->updateOrCreate(
                 [
                     'tenant_id' => $tenant->id,
                     'sku' => $spec['sku'],
@@ -136,7 +163,7 @@ class FashionDemoSeeder extends Seeder
                 ]
             );
 
-            ProductPrice::query()->updateOrCreate(
+            ProductPrice::withoutGlobalScopes()->updateOrCreate(
                 [
                     'tenant_id' => $tenant->id,
                     'product_id' => $product->id,
@@ -145,7 +172,7 @@ class FashionDemoSeeder extends Seeder
                 ['price' => $spec['price']]
             );
 
-            ProductStock::query()->updateOrCreate(
+            ProductStock::withoutGlobalScopes()->updateOrCreate(
                 [
                     'tenant_id' => $tenant->id,
                     'product_id' => $product->id,
@@ -154,13 +181,13 @@ class FashionDemoSeeder extends Seeder
                 ['quantity' => $spec['stock']]
             );
 
-            $hasImage = ProductImage::query()
+            $hasImage = ProductImage::withoutGlobalScopes()
                 ->where('tenant_id', $tenant->id)
                 ->where('product_id', $product->id)
                 ->exists();
 
             if (! $hasImage) {
-                ProductImage::query()->create([
+                ProductImage::withoutGlobalScopes()->create([
                     'tenant_id' => $tenant->id,
                     'product_id' => $product->id,
                     'url' => $spec['img'],
@@ -175,7 +202,7 @@ class FashionDemoSeeder extends Seeder
                     ['name' => 'Материал', 'value' => $spec['material']],
                 ] as $feature
             ) {
-                ProductFeature::query()->updateOrCreate(
+                ProductFeature::withoutGlobalScopes()->updateOrCreate(
                     [
                         'tenant_id' => $tenant->id,
                         'product_id' => $product->id,
