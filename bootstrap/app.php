@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\CaptureUtm;
 use App\Http\Middleware\EnsureTenant;
 use App\Http\Middleware\ResolveTenant;
 use Illuminate\Foundation\Application;
@@ -16,6 +17,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(prepend: [
             ResolveTenant::class,
         ]);
+        $middleware->web(append: [
+            CaptureUtm::class,
+        ]);
 
         $middleware->alias([
             'tenant' => EnsureTenant::class,
@@ -24,6 +28,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->validateCsrfTokens(except: [
             '1c/*',
             '*/1c/*',
+            'payment/webhook',
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
