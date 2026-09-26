@@ -99,8 +99,57 @@ class Product extends Model
 
     public function hasVariants(): bool
     {
-        return $this->variants()->whereNotNull('options_hash')->exists()
+        return $this->variants()->exists()
             || $this->features()->where('is_variant', true)->exists();
+    }
+
+    /**
+     * Остаток по выбранной комбинации характеристик.
+     * null — такой комбинации нет (или варианты обязательны, а выбор пуст).
+     *
+     * @param  array<string, string>  $options
+     */
+    public function variantQuantity(array $options): ?float
+    {
+        $filtered = array_filter(
+            $options,
+            static fn ($v) => $v !== null && $v !== ''
+        );
+
+        $hasRealVariants = $this->variants()->exists();
+
+        if ($filtered === []) {
+            return $hasRealVariants ? null : $this->stockTotal();
+        }
+
+        foreach ($this->variants()->get() as $variant) {
+            $vo = $variant->options ?? [];
+            if (! is_array($vo) || $vo === []) {
+                continue;
+            }
+
+            $match = true;
+            foreach ($filtered as $key => $value) {
+                if (! array_key_exists($key, $vo) || (string) $vo[$key] !== (string) $value) {
+                    $match = false;
+                    break;
+                }
+            }
+
+            if (! $match) {
+                continue;
+            }
+
+            // Точное совпадение набора ключей (все характеристики выбраны)
+            if (count($vo) === count($filtered)) {
+                return (float) $variant->quantity;
+            }
+
+            // Частичный выбор: подходит, если все выбранные совпали
+            return (float) $variant->quantity;
+        }
+
+        return null;
     }
 
     public function prices(): HasMany
