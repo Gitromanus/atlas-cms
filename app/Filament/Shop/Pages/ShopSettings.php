@@ -61,6 +61,11 @@ class ShopSettings extends Page implements HasForms
             'enable_reviews' => (bool) ($settings['enable_reviews'] ?? true),
             'yookassa_shop_id' => (string) ($settings['yookassa_shop_id'] ?? ''),
             'yookassa_secret_key' => (string) ($settings['yookassa_secret_key'] ?? ''),
+            'yandex_delivery_token' => (string) ($settings['yandex_delivery_token'] ?? ''),
+            'yandex_delivery_source_address' => (string) ($settings['yandex_delivery_source_address'] ?? ''),
+            'yandex_delivery_source_lon' => $settings['yandex_delivery_source_lon'] ?? null,
+            'yandex_delivery_source_lat' => $settings['yandex_delivery_source_lat'] ?? null,
+            'yandex_delivery_taxi_class' => (string) ($settings['yandex_delivery_taxi_class'] ?? 'express'),
             'logo_path' => $tenant->logo_path,
             'custom_domain' => (string) ($tenant->domains()->where('is_primary', true)->value('domain') ?? ''),
         ]);
@@ -125,6 +130,39 @@ class ShopSettings extends Page implements HasForms
                             ->maxLength(255),
                     ])
                     ->columns(2),
+                Section::make('Яндекс Доставка')
+                    ->description('Расчёт стоимости курьера на checkout. Токен OAuth из кабинета B2B Яндекс Доставки. Способ доставки с кодом «yandex» в справочнике.')
+                    ->schema([
+                        TextInput::make('yandex_delivery_token')
+                            ->label('OAuth-токен')
+                            ->password()
+                            ->revealable()
+                            ->maxLength(512)
+                            ->helperText('Кабинет: dostavka.yandex.ru → API'),
+                        TextInput::make('yandex_delivery_source_address')
+                            ->label('Адрес склада / точки отправления')
+                            ->placeholder('Москва, ул. Примерная, 1')
+                            ->maxLength(500)
+                            ->columnSpanFull(),
+                        TextInput::make('yandex_delivery_source_lon')
+                            ->label('Долгота (lon)')
+                            ->numeric()
+                            ->step(0.000001)
+                            ->helperText('Опционально, точнее геокодера'),
+                        TextInput::make('yandex_delivery_source_lat')
+                            ->label('Широта (lat)')
+                            ->numeric()
+                            ->step(0.000001),
+                        Select::make('yandex_delivery_taxi_class')
+                            ->label('Тариф')
+                            ->options([
+                                'courier' => 'Курьер',
+                                'express' => 'Экспресс',
+                                'cargo' => 'Грузовой',
+                            ])
+                            ->default('express'),
+                    ])
+                    ->columns(2),
                 Section::make('Свой домен')
                     ->description('Укажите домен (например shop.example.com). Настройте A/CNAME на этот сервер. После DNS витрина откроется без /{slug}.')
                     ->schema([
@@ -149,16 +187,39 @@ class ShopSettings extends Page implements HasForms
     protected function tenant(): Tenant
     {
         $user = auth()->user();
-        if ($user?->tenant) {
-            return $user->tenant->loadMissing('theme');
+
+        if ($user !== null && $user->tenant_id) {
+            $tenant = $user->relationLoaded('tenant')
+                ? $user->tenant
+                : $user->tenant()->first();
+            if ($tenant === null) {
+                $tenant = Tenant::query()->find($user->tenant_id);
+            }
+            if ($tenant !== null) {
+                return $tenant->loadMissing('theme');
+            }
         }
 
         $ctx = app(TenantContext::class)->current();
-        if ($ctx) {
+        if ($ctx !== null) {
             return $ctx->loadMissing('theme');
         }
 
-        abort(403, 'Магазин не определён');
+        // Супер-админ без привязки — первый магазин (или выбранный в сессии)
+        if ($user !== null && method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin()) {
+            $sessionId = session('filament_shop_tenant_id');
+            $tenant = $sessionId
+                ? Tenant::query()->find($sessionId)
+                : Tenant::query()->orderBy('id')->first();
+            if ($tenant !== null) {
+                session(['filament_shop_tenant_id' => $tenant->id]);
+                app(TenantContext::class)->set($tenant);
+
+                return $tenant->loadMissing('theme');
+            }
+        }
+
+        abort(403, 'Магазин не определён. Войдите учётной записью владельца магазина.');
     }
 
     protected function storefrontUrlPreview(): string
@@ -216,6 +277,15 @@ class ShopSettings extends Page implements HasForms
         $settings['enable_reviews'] = (bool) ($data['enable_reviews'] ?? false);
         $settings['yookassa_shop_id'] = trim((string) ($data['yookassa_shop_id'] ?? '')) ?: null;
         $settings['yookassa_secret_key'] = trim((string) ($data['yookassa_secret_key'] ?? '')) ?: null;
+        $settings['yandex_delivery_token'] = trim((string) ($data['yandex_delivery_token'] ?? '')) ?: null;
+        $settings['yandex_delivery_source_address'] = trim((string) ($data['yandex_delivery_source_address'] ?? '')) ?: null;
+        $lon = $data['yandex_delivery_source_lon'] ?? null;
+        $lat = $data['yandex_delivery_source_lat'] ?? null;
+        $settings['yandex_delivery_source_lon'] = ($lon !== null && $lon !== '') ? (float) $lon : null;
+        $settings['yandex_delivery_source_lat'] = ($lat !== null && $lat !== '') ? (float) $lat : null;
+        $settings['yandex_delivery_taxi_class'] = in_array(($data['yandex_delivery_taxi_class'] ?? ''), ['courier', 'express', 'cargo'], true)
+            ? $data['yandex_delivery_taxi_class']
+            : 'express';
 
         $logo = $data['logo_path'] ?? null;
         if (is_array($logo)) {
