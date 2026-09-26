@@ -8,6 +8,7 @@ use App\Http\Controllers\Platform\ShopRegistrationController;
 use App\Http\Controllers\Shop\CartController;
 use App\Http\Controllers\Shop\CatalogController;
 use App\Http\Controllers\Shop\CheckoutController;
+use App\Http\Controllers\Shop\DeliveryController;
 use App\Http\Controllers\Shop\CompareController;
 use App\Http\Controllers\Shop\HomeController;
 use App\Http\Controllers\Shop\OrderTrackController;
@@ -70,6 +71,7 @@ Route::prefix('{shop}')
         Route::get('/track', [OrderTrackController::class, 'form'])->name('order.track');
         Route::post('/track', [OrderTrackController::class, 'lookup'])->name('order.track.lookup');
 
+        Route::post('/delivery/calculate', [DeliveryController::class, 'calculate'])->name('delivery.calculate');
         Route::get('/checkout', [CheckoutController::class, 'index'])->name('checkout.index');
         Route::post('/checkout', [CheckoutController::class, 'store'])->name('checkout.store');
         Route::get('/order/success/{order}', [CheckoutController::class, 'success'])->name('checkout.success');
