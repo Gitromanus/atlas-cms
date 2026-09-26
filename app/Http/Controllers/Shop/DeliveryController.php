@@ -72,7 +72,7 @@ class DeliveryController extends Controller
             if ($result === null) {
                 return response()->json([
                     'ok' => false,
-                    'message' => 'Не удалось рассчитать. Проверьте адрес.',
+                    'message' => 'Не удалось рассчитать. Проверьте токен, адрес склада и что выключен тестовый контур при боевом ключе.',
                     'price' => $method ? (float) $method->costFor($itemsTotal) : null,
                     'source' => 'fallback',
                 ]);
@@ -147,6 +147,20 @@ class DeliveryController extends Controller
         }
 
         $estimate = $this->yandex->estimateForDestination($tenant, $address, $weight, $assessed);
+        $meta = $estimate['meta'] ?? [];
+
+        $hint = null;
+        if ($estimate['options'] === []) {
+            if (empty($meta['express_configured']) && empty($meta['platform_configured'])) {
+                $hint = 'Укажите OAuth-токен и адрес склада в настройках. Для доставки по России нужен ID станции отгрузки.';
+            } elseif (empty($meta['platform_configured']) && ! empty($meta['express_configured'])) {
+                $hint = 'Express настроен. Для «по России» укажите ID станции отгрузки (platform_station_id) из кабинета.';
+            } elseif (! empty($meta['test_contour'])) {
+                $hint = 'Активен тестовый контур (в основном Москва). При боевом токене хост переключается автоматически после деплоя фикса.';
+            } else {
+                $hint = 'API не вернул тарифы. Проверьте токен, адрес склада и обслуживаемый город.';
+            }
+        }
 
         return response()->json([
             'ok' => true,
@@ -155,6 +169,7 @@ class DeliveryController extends Controller
             'geo_source' => $geo['source'] ?? null,
             'address' => $estimate['address'],
             'min_price' => $estimate['min_price'],
+            'test_contour' => (bool) ($meta['test_contour'] ?? false),
             'options' => array_map(static function (array $o) {
                 return [
                     'type' => $o['type'] ?? null,
@@ -166,9 +181,7 @@ class DeliveryController extends Controller
                     'tariff' => $o['tariff'] ?? null,
                 ];
             }, $estimate['options']),
-            'message' => $estimate['options'] === []
-                ? 'Не удалось рассчитать доставку для этого города'
-                : null,
+            'message' => $hint,
         ]);
     }
 }
