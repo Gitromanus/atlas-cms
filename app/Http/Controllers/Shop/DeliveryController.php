@@ -45,10 +45,10 @@ class DeliveryController extends Controller
         $useRussia = in_array($code, ['yandex_russia', 'yandex_ndd', 'yandex_platform', 'yandex-russia'], true);
 
         if ($useExpress || $useRussia) {
-            if (! $this->yandex->isConfigured($tenant) && ! $this->yandex->isPlatformConfigured($tenant)) {
+            if (! $this->yandex->isConfigured($tenant)) {
                 return response()->json([
                     'ok' => false,
-                    'message' => 'Яндекс Доставка не настроена',
+                    'message' => 'Яндекс Доставка не настроена (нужны токен и ID станции или адрес склада)',
                     'price' => $method ? (float) $method->costFor($itemsTotal) : null,
                 ]);
             }
@@ -72,7 +72,7 @@ class DeliveryController extends Controller
             if ($result === null) {
                 return response()->json([
                     'ok' => false,
-                    'message' => 'Не удалось рассчитать. Проверьте токен, адрес склада и что выключен тестовый контур при боевом ключе.',
+                    'message' => 'Не удалось рассчитать. Проверьте токен и ID станции отгрузки.',
                     'price' => $method ? (float) $method->costFor($itemsTotal) : null,
                     'source' => 'fallback',
                 ]);
@@ -151,14 +151,14 @@ class DeliveryController extends Controller
 
         $hint = null;
         if ($estimate['options'] === []) {
-            if (empty($meta['express_configured']) && empty($meta['platform_configured'])) {
-                $hint = 'Укажите OAuth-токен и адрес склада в настройках. Для доставки по России нужен ID станции отгрузки.';
-            } elseif (empty($meta['platform_configured']) && ! empty($meta['express_configured'])) {
-                $hint = 'Express настроен. Для «по России» укажите ID станции отгрузки (platform_station_id) из кабинета.';
+            if (empty($meta['platform_configured']) && empty($meta['express_configured'])) {
+                $hint = 'В настройках магазина укажите OAuth-токен и ID станции отгрузки.';
+            } elseif (empty($meta['platform_configured'])) {
+                $hint = 'Нет ID станции. В «Настройки магазина» → Яндекс Доставка вставьте platform_station_id.';
             } elseif (! empty($meta['test_contour'])) {
-                $hint = 'Активен тестовый контур (в основном Москва). При боевом токене хост переключается автоматически после деплоя фикса.';
+                $hint = 'Тестовый контур. Для боевого ключа проверьте город назначения.';
             } else {
-                $hint = 'API не вернул тарифы. Проверьте токен, адрес склада и обслуживаемый город.';
+                $hint = 'API не вернул тарифы для этого города. Проверьте токен и ID станции.';
             }
         }
 
