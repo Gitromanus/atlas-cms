@@ -7,9 +7,8 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Клиент B2B API Яндекс Доставки.
- * Express: b2b.taxi.yandex.net
- * Россия: b2b-authproxy.taxi.yandex.net
+ * Боевой контур «по России»: источник = platform_station_id.
+ * Express: нужен адрес склада (опционально).
  */
 class YandexDeliveryService
 {
@@ -18,9 +17,11 @@ class YandexDeliveryService
         if ($tenant === null) {
             return false;
         }
-        [$token, $source] = $this->credentials($tenant);
 
-        return $token !== '' && $source !== '';
+        [$token] = $this->credentials($tenant);
+
+        return $token !== ''
+            && ($this->platformStationId($tenant) !== '' || $this->sourceAddress($tenant) !== '');
     }
 
     public function isPlatformConfigured(?Tenant $tenant): bool
@@ -28,21 +29,29 @@ class YandexDeliveryService
         if ($tenant === null) {
             return false;
         }
+
         [$token] = $this->credentials($tenant);
 
         return $token !== '' && $this->platformStationId($tenant) !== '';
     }
 
-    /**
-     * Боевой токен (не тестовый) → всегда боевые хосты.
-     */
+    public function isExpressConfigured(?Tenant $tenant): bool
+    {
+        if ($tenant === null) {
+            return false;
+        }
+
+        [$token] = $this->credentials($tenant);
+
+        return $token !== '' && $this->sourceAddress($tenant) !== '';
+    }
+
     public function isTestContour(Tenant $tenant): bool
     {
         $token = trim((string) $tenant->setting('yandex_delivery_token', ''));
         $testToken = (string) config('services.yandex_delivery.test_token');
         $testMode = (bool) $tenant->setting('yandex_delivery_test_mode', false);
 
-        // Свой ключ — никогда на tst
         if ($token !== '' && $token !== $testToken) {
             return false;
         }
@@ -58,21 +67,36 @@ class YandexDeliveryService
         return $testMode && ($token === '' || $token === $testToken);
     }
 
+    protected function sourceAddress(Tenant $tenant): string
+    {
+        $source = trim((string) $tenant->setting('yandex_delivery_source_address', ''));
+        if ($source !== '') {
+            return $source;
+        }
+
+        if ($this->isTestContour($tenant)) {
+            return (string) config('services.yandex_delivery.test_source_address');
+        }
+
+        $city = trim((string) $tenant->setting('yandex_delivery_default_city', ''));
+
+        return $city !== '' ? $city : '';
+    }
+
     protected function credentials(Tenant $tenant): array
     {
         $token = trim((string) $tenant->setting('yandex_delivery_token', ''));
-        $source = trim((string) $tenant->setting('yandex_delivery_source_address', ''));
         $taxiClass = (string) ($tenant->setting('yandex_delivery_taxi_class') ?: 'express');
         $lon = $tenant->setting('yandex_delivery_source_lon');
         $lat = $tenant->setting('yandex_delivery_source_lat');
-
-        $testToken = (string) config('services.yandex_delivery.test_token');
         $useTest = $this->isTestContour($tenant);
+        $testToken = (string) config('services.yandex_delivery.test_token');
 
         if ($token === '' && $useTest) {
             $token = $testToken;
         }
 
+        $source = $this->sourceAddress($tenant);
         if ($source === '' && $useTest) {
             $source = (string) config('services.yandex_delivery.test_source_address');
             $lon = config('services.yandex_delivery.test_source_lon');
@@ -99,7 +123,7 @@ class YandexDeliveryService
         ];
     }
 
-    protected function platformStationId(Tenant $tenant): string
+    public function platformStationId(Tenant $tenant): string
     {
         $station = trim((string) $tenant->setting('yandex_delivery_station_id', ''));
         if ($station !== '') {
@@ -134,15 +158,9 @@ class YandexDeliveryService
         ?float $heightM = 0.15,
         int $quantity = 1,
     ): ?array {
-        [$token, $sourceAddress, $baseUrl, $srcLon, $srcLat, $taxiClass, $useTest] = $this->credentials($tenant);
+        [$token, $sourceAddress, $baseUrl, $srcLon, $srcLat, $taxiClass] = $this->credentials($tenant);
 
         if ($token === '' || $sourceAddress === '' || trim($destinationAddress) === '') {
-            Log::info('Yandex Express skip', [
-                'has_token' => $token !== '',
-                'has_source' => $sourceAddress !== '',
-                'test' => $useTest,
-            ]);
-
             return null;
         }
 
@@ -228,7 +246,7 @@ class YandexDeliveryService
         if ($token === '' || $station === '' || trim($destinationAddress) === '') {
             Log::info('Yandex Platform skip', [
                 'has_token' => $token !== '',
-                'has_station' => $station !== '',
+                'station' => $station !== '' ? 'set' : 'empty',
                 'test' => $useTest,
             ]);
 
@@ -254,6 +272,8 @@ class YandexDeliveryService
                 Log::warning('Yandex Platform failed', [
                     'status' => $response->status(),
                     'base' => $baseUrl,
+                    'station' => $station,
+                    'tariff' => $tariff,
                     'body' => mb_substr($response->body(), 0, 400),
                 ]);
 
@@ -299,22 +319,27 @@ class YandexDeliveryService
         $options = [];
         $meta = [
             'test_contour' => $this->isTestContour($tenant),
-            'express_configured' => $this->isConfigured($tenant),
+            'express_configured' => $this->isExpressConfigured($tenant),
             'platform_configured' => $this->isPlatformConfigured($tenant),
+            'station_id' => $this->platformStationId($tenant) !== '' ? 'set' : null,
         ];
 
-        $express = $this->checkPrice($tenant, $destinationAddress, $weightKg);
-        if ($express !== null) {
-            $options[] = $express;
+        if ($this->isPlatformConfigured($tenant)) {
+            foreach (['self_pickup', 'time_interval'] as $tariff) {
+                $row = $this->checkPriceRussia($tenant, $destinationAddress, $weightKg, $assessedRub, $tariff);
+                if ($row !== null) {
+                    $options[] = $row;
+                }
+            }
         }
-        $door = $this->checkPriceRussia($tenant, $destinationAddress, $weightKg, $assessedRub, 'time_interval');
-        if ($door !== null) {
-            $options[] = $door;
+
+        if ($this->isExpressConfigured($tenant)) {
+            $express = $this->checkPrice($tenant, $destinationAddress, $weightKg);
+            if ($express !== null) {
+                $options[] = $express;
+            }
         }
-        $pvz = $this->checkPriceRussia($tenant, $destinationAddress, $weightKg, $assessedRub, 'self_pickup');
-        if ($pvz !== null) {
-            $options[] = $pvz;
-        }
+
         usort($options, fn ($a, $b) => $a['price'] <=> $b['price']);
 
         return [
