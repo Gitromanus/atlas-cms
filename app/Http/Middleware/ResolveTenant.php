@@ -14,10 +14,13 @@ use Symfony\Component\HttpFoundation\Response;
  * Определяет текущий магазин (тенанта).
  *
  * Порядок:
- *  1. Собственный домен магазина (tenant_domains) — для будущего «свой домен».
+ *  1. Собственный домен магазина (tenant_domains).
  *  2. Path-режим: первый сегмент URL = slug магазина (/{slug}/…).
- *  3. Поддомен {slug}.{root_domain} — если ATLAS_TENANT_ROUTING=subdomain
- *     или как запасной вариант при wildcard-DNS.
+ *  3. Поддомен {slug}.{root_domain}.
+ *
+ * Для кастомного домена: если путь ещё не начинается с /{slug},
+ * запрос внутренне переписывается на /{slug}/…, чтобы сработали
+ * существующие именованные маршруты с параметром {shop}.
  */
 class ResolveTenant
 {
@@ -26,6 +29,7 @@ class ResolveTenant
         $host = strtolower($request->getHost());
         $tenant = null;
         $shopParam = null;
+        $fromCustomDomain = false;
 
         // 1. Собственный (кастомный) домен магазина
         $domain = TenantDomain::query()->where('domain', $host)->first();
@@ -34,6 +38,8 @@ class ResolveTenant
             $tenant = $domain->tenant;
             if ($tenant !== null && $tenant->is_active) {
                 $tenant->loadMissing('theme');
+                $shopParam = $tenant->slug ?: $tenant->subdomain;
+                $fromCustomDomain = true;
             } else {
                 $tenant = null;
             }
@@ -92,6 +98,35 @@ class ResolveTenant
         // Параметр {shop} в именованных маршрутах витрины
         if ($shopParam !== null) {
             URL::defaults(['shop' => $shopParam]);
+        }
+
+        // Кастомный домен: внешние URL без /{slug}, внутри — с префиксом
+        if ($fromCustomDomain && $shopParam !== null) {
+            $path = '/'.ltrim($request->path(), '/');
+            $slugPrefix = '/'.$shopParam;
+
+            $alreadyPrefixed = $path === $slugPrefix
+                || str_starts_with($path, $slugPrefix.'/');
+
+            if (! $alreadyPrefixed) {
+                $newPath = $path === '/' ? $slugPrefix : $slugPrefix.$path;
+                $query = $request->getQueryString();
+                $uri = $newPath.($query ? '?'.$query : '');
+
+                $request->server->set('REQUEST_URI', $uri);
+                $request->initialize(
+                    $request->query->all(),
+                    $request->request->all(),
+                    $request->attributes->all(),
+                    $request->cookies->all(),
+                    $request->files->all(),
+                    array_merge($request->server->all(), ['REQUEST_URI' => $uri]),
+                    $request->getContent()
+                );
+            }
+
+            // Абсолютные URL на этом хосте — без лишнего /slug (Tenant::url())
+            URL::forceRootUrl($request->getSchemeAndHttpHost());
         }
 
         return $next($request);
