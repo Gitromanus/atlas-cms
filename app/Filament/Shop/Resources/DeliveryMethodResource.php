@@ -15,6 +15,9 @@ class DeliveryMethodResource extends Resource {
         return $form->schema([
             Forms\Components\Hidden::make('tenant_id')->default(fn()=>app(TenantContext::class)->id()),
             Forms\Components\TextInput::make('name')->label('Название')->required(),
+            Forms\Components\TextInput::make('code')->label('Код')
+                ->helperText('Для Яндекс Доставки укажите: yandex')
+                ->maxLength(64)->nullable(),
             Forms\Components\TextInput::make('price')->label('Стоимость ₽')->numeric()->default(0)->required(),
             Forms\Components\TextInput::make('free_from')->label('Бесплатно от ₽')->numeric()->nullable(),
             Forms\Components\Textarea::make('description')->label('Описание')->rows(2)->columnSpanFull(),
