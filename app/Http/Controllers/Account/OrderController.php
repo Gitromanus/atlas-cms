@@ -12,6 +12,7 @@ class OrderController extends Controller
     public function index(): View
     {
         $customer = auth('customers')->user();
+        abort_unless($customer !== null, 403);
 
         $orders = Order::query()
             ->where('customer_id', $customer->id)
@@ -26,6 +27,7 @@ class OrderController extends Controller
     public function show(Request $request, string $shop, int|string $order): View
     {
         $customer = auth('customers')->user();
+        abort_unless($customer !== null, 403);
 
         $model = Order::query()
             ->with(['items', 'status'])

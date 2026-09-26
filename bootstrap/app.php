@@ -25,6 +25,24 @@ return Application::configure(basePath: dirname(__DIR__))
             'tenant' => EnsureTenant::class,
         ]);
 
+        // Гости личного кабинета покупателя → логин витрины (не route('login'), его нет)
+        $middleware->redirectGuestsTo(function (\Illuminate\Http\Request $request) {
+            $shop = $request->route('shop');
+            if (! $shop) {
+                $segments = $request->segments();
+                $first = $segments[0] ?? null;
+                $reserved = config('atlas.reserved_paths', []);
+                if (is_string($first) && $first !== '' && ! in_array(strtolower($first), $reserved, true)) {
+                    $shop = $first;
+                }
+            }
+            if ($shop) {
+                return route('customer.login', ['shop' => $shop]);
+            }
+
+            return url('/shop/login');
+        });
+
         $middleware->validateCsrfTokens(except: [
             '1c/*',
             '*/1c/*',
