@@ -59,6 +59,8 @@ class ShopSettings extends Page implements HasForms
             'enable_articles' => (bool) ($settings['enable_articles'] ?? true),
             'enable_news' => (bool) ($settings['enable_news'] ?? true),
             'enable_reviews' => (bool) ($settings['enable_reviews'] ?? true),
+            'yookassa_shop_id' => (string) ($settings['yookassa_shop_id'] ?? ''),
+            'yookassa_secret_key' => (string) ($settings['yookassa_secret_key'] ?? ''),
             'logo_path' => $tenant->logo_path,
         ]);
     }
@@ -109,6 +111,19 @@ class ShopSettings extends Page implements HasForms
                         Toggle::make('enable_reviews')->label('Отзывы к товарам'),
                     ])
                     ->columns(3),
+                Section::make('Онлайн-оплата (ЮKassa)')
+                    ->description('Покупатель сможет оплатить картой на checkout. Webhook в ЮKassa: ваш-сайт/payment/webhook')
+                    ->schema([
+                        TextInput::make('yookassa_shop_id')
+                            ->label('Shop ID')
+                            ->maxLength(64),
+                        TextInput::make('yookassa_secret_key')
+                            ->label('Секретный ключ')
+                            ->password()
+                            ->revealable()
+                            ->maxLength(255),
+                    ])
+                    ->columns(2),
                 Section::make('Свой домен')
                     ->description('Сейчас витрина: path платформы /{slug}. Свой домен — в следующем обновлении.')
                     ->schema([
@@ -193,6 +208,8 @@ class ShopSettings extends Page implements HasForms
         $settings['enable_articles'] = (bool) ($data['enable_articles'] ?? false);
         $settings['enable_news'] = (bool) ($data['enable_news'] ?? false);
         $settings['enable_reviews'] = (bool) ($data['enable_reviews'] ?? false);
+        $settings['yookassa_shop_id'] = trim((string) ($data['yookassa_shop_id'] ?? '')) ?: null;
+        $settings['yookassa_secret_key'] = trim((string) ($data['yookassa_secret_key'] ?? '')) ?: null;
 
         $logo = $data['logo_path'] ?? null;
         if (is_array($logo)) {
