@@ -2,12 +2,6 @@
 
 return [
 
-    /*
-    |--------------------------------------------------------------------------
-    | Third Party Services
-    |--------------------------------------------------------------------------
-    */
-
     'postmark' => [
         'token' => env('POSTMARK_TOKEN'),
     ],
@@ -29,11 +23,6 @@ return [
         ],
     ],
 
-    /*
-    | Яндекс Доставка (Express API).
-    | Тестовый контур: https://b2b.taxi.tst.yandex.net (только Москва).
-    | Официальный тест-токен из документации Яндекса — через env или auto-default.
-    */
     'yandex_delivery' => [
         'test_token' => env('YANDEX_DELIVERY_TEST_TOKEN') ?: implode('', [
             'y2_AgAAAA', 'D04omrAAAPe', 'AAAAAACRpC94', 'Qk6Z5rUTgOc', 'TgYFECJllXYKFx8',
@@ -44,6 +33,9 @@ return [
         'test_source_lon' => (float) env('YANDEX_DELIVERY_TEST_LON', 37.5835),
         'test_source_lat' => (float) env('YANDEX_DELIVERY_TEST_LAT', 55.7995),
         'fallback_to_test' => filter_var(env('YANDEX_DELIVERY_FALLBACK_TEST', true), FILTER_VALIDATE_BOOL),
+        'platform_test_base_url' => env('YANDEX_DELIVERY_PLATFORM_TEST_URL', 'https://b2b.taxi.tst.yandex.net'),
+        'platform_prod_base_url' => env('YANDEX_DELIVERY_PLATFORM_URL', 'https://b2b-authproxy.taxi.yandex.net'),
+        'test_station_id' => env('YANDEX_DELIVERY_TEST_STATION', 'fbed3aa1-2cc6-4370-ab4d-59c5cc9bb924'),
     ],
 
 ];
