@@ -7,8 +7,8 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Боевой контур «по России»: источник = platform_station_id.
- * Express: нужен адрес склада (опционально).
+ * Боевой: OAuth + platform_station_id.
+ * Тест (тумблер): tst-хост + демо-токен + демо-станция.
  */
 class YandexDeliveryService
 {
@@ -48,15 +48,15 @@ class YandexDeliveryService
 
     public function isTestContour(Tenant $tenant): bool
     {
-        $token = trim((string) $tenant->setting('yandex_delivery_token', ''));
-        $testToken = (string) config('services.yandex_delivery.test_token');
-        $testMode = (bool) $tenant->setting('yandex_delivery_test_mode', false);
-
-        if ($token !== '' && $token !== $testToken) {
-            return false;
+        // Явный тумблер в настройках — всегда тестовый контур
+        if ((bool) $tenant->setting('yandex_delivery_test_mode', false)) {
+            return true;
         }
 
-        if ($token === $testToken && $token !== '') {
+        $token = trim((string) $tenant->setting('yandex_delivery_token', ''));
+        $testToken = (string) config('services.yandex_delivery.test_token');
+
+        if ($token !== '' && $token === $testToken) {
             return true;
         }
 
@@ -64,7 +64,7 @@ class YandexDeliveryService
             return true;
         }
 
-        return $testMode && ($token === '' || $token === $testToken);
+        return false;
     }
 
     protected function sourceAddress(Tenant $tenant): string
@@ -92,7 +92,8 @@ class YandexDeliveryService
         $useTest = $this->isTestContour($tenant);
         $testToken = (string) config('services.yandex_delivery.test_token');
 
-        if ($token === '' && $useTest) {
+        // На тестовом контуре — только тестовый OAuth (боевой ключ на tst не работает)
+        if ($useTest) {
             $token = $testToken;
         }
 
@@ -125,16 +126,15 @@ class YandexDeliveryService
 
     public function platformStationId(Tenant $tenant): string
     {
-        $station = trim((string) $tenant->setting('yandex_delivery_station_id', ''));
-        if ($station !== '') {
-            return $station;
-        }
-
+        // Тестовый контур: всегда демо-станция (боевой station_id на tst не обслуживается)
         if ($this->isTestContour($tenant)) {
-            return (string) config('services.yandex_delivery.test_station_id');
+            $testStation = trim((string) config('services.yandex_delivery.test_station_id'));
+            if ($testStation !== '') {
+                return $testStation;
+            }
         }
 
-        return '';
+        return trim((string) $tenant->setting('yandex_delivery_station_id', ''));
     }
 
     protected function platformBaseUrl(Tenant $tenant): string
