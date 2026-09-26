@@ -5,26 +5,25 @@ namespace App\Services\Orders;
 use App\Mail\NewOrderToShop;
 use App\Mail\OrderConfirmationToCustomer;
 use App\Models\Customer;
+use App\Models\DeliveryMethod;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderStatus;
 use App\Services\Cart\CartService;
+use App\Services\Delivery\YandexDeliveryService;
 use App\Services\Tenant\TenantContext;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 
-/**
- * Создание заказа из корзины покупателя.
- */
 class OrderService
 {
-    public function __construct(protected CartService $cart) {}
+    public function __construct(
+        protected CartService $cart,
+        protected YandexDeliveryService $yandex,
+    ) {}
 
-    /**
-     * @param  array{name: string, phone?: string, email?: string, delivery_method?: string, delivery_address?: string, payment_method?: string, comment?: string}  $data
-     */
     public function create(array $data): Order
     {
         $customer = auth('customers')->user();
@@ -38,11 +37,14 @@ class OrderService
         abort_if($items->isEmpty(), 422, 'Корзина пуста');
 
         $itemsTotal = $items->sum(fn ($item) => (float) ($item->product->price ?? 0) * $item->quantity);
-        $deliveryCost = 0.0;
+        $deliveryMeta = $this->resolveDelivery($data, $itemsTotal);
+        $deliveryCost = $deliveryMeta['cost'];
+        $deliveryMethodId = $deliveryMeta['method_id'];
+        $deliveryMethodName = $deliveryMeta['method_name'];
 
         $status = OrderStatus::query()->where('code', 'new')->firstOrFail();
 
-        return DB::transaction(function () use ($data, $customer, $items, $itemsTotal, $deliveryCost, $status) {
+        return DB::transaction(function () use ($data, $customer, $items, $itemsTotal, $deliveryCost, $deliveryMethodId, $deliveryMethodName, $status) {
             $tenantId = app(TenantContext::class)->id();
 
             $order = Order::create([
@@ -58,7 +60,8 @@ class OrderService
                 'customer_name' => $data['name'],
                 'customer_phone' => $data['phone'] ?? null,
                 'customer_email' => $data['email'] ?? null,
-                'delivery_method' => $data['delivery_method'] ?? null,
+                'delivery_method' => $deliveryMethodName ?? ($data['delivery_method'] ?? null),
+                'delivery_method_id' => $deliveryMethodId,
                 'delivery_address' => $data['delivery_address'] ?? null,
                 'payment_method' => $data['payment_method'] ?? null,
                 'comment' => $data['comment'] ?? null,
@@ -86,6 +89,65 @@ class OrderService
 
             return $order;
         });
+    }
+
+    protected function resolveDelivery(array $data, float $itemsTotal): array
+    {
+        $tenant = app(TenantContext::class)->current();
+        $methodId = isset($data['delivery_method_id']) ? (int) $data['delivery_method_id'] : null;
+        $method = $methodId
+            ? DeliveryMethod::query()->active()->whereKey($methodId)->first()
+            : null;
+
+        $address = trim((string) ($data['delivery_address'] ?? ''));
+        $clientCost = isset($data['delivery_cost']) && $data['delivery_cost'] !== ''
+            ? (float) $data['delivery_cost']
+            : null;
+
+        if ($method) {
+            $isYandex = in_array(strtolower((string) $method->code), ['yandex', 'yandex_delivery', 'yandex-delivery'], true);
+
+            if ($isYandex && $tenant && $this->yandex->isConfigured($tenant) && $address !== '') {
+                $qty = max(1, (int) $this->cart->count());
+                $result = $this->yandex->checkPrice($tenant, $address, max(0.5, $qty * 0.5));
+                if ($result !== null) {
+                    return [
+                        'cost' => (float) $result['price'],
+                        'method_id' => $method->id,
+                        'method_name' => $method->name,
+                    ];
+                }
+            }
+
+            if ($clientCost !== null && $clientCost >= 0 && $isYandex) {
+                return [
+                    'cost' => $clientCost,
+                    'method_id' => $method->id,
+                    'method_name' => $method->name,
+                ];
+            }
+
+            return [
+                'cost' => (float) $method->costFor($itemsTotal),
+                'method_id' => $method->id,
+                'method_name' => $method->name,
+            ];
+        }
+
+        $code = (string) ($data['delivery_method'] ?? 'pickup');
+        $cost = match ($code) {
+            'pickup' => 0.0,
+            'courier' => 300.0,
+            'post' => 350.0,
+            'yandex' => $clientCost ?? 0.0,
+            default => $clientCost ?? 0.0,
+        };
+
+        return [
+            'cost' => (float) $cost,
+            'method_id' => null,
+            'method_name' => $code,
+        ];
     }
 
     protected function notifyAboutOrder(Order $order): void
@@ -118,9 +180,6 @@ class OrderService
         }
     }
 
-    /**
-     * @param  array{name?: string, phone?: string, email?: string}  $data
-     */
     protected function findOrCreateCustomer(array $data): ?Customer
     {
         $email = Customer::normalizeEmail($data['email'] ?? null);
