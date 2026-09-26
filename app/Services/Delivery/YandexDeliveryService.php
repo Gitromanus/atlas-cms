@@ -8,8 +8,8 @@ use Illuminate\Support\Facades\Log;
 
 /**
  * Клиент B2B API Яндекс Доставки.
- * Express: /b2b/cargo/integration/v2/check-price
- * По России: /api/b2b/platform/pricing-calculator
+ * Express: b2b.taxi.yandex.net
+ * Россия: b2b-authproxy.taxi.yandex.net
  */
 class YandexDeliveryService
 {
@@ -33,6 +33,31 @@ class YandexDeliveryService
         return $token !== '' && $this->platformStationId($tenant) !== '';
     }
 
+    /**
+     * Боевой токен (не тестовый) → всегда боевые хосты.
+     */
+    public function isTestContour(Tenant $tenant): bool
+    {
+        $token = trim((string) $tenant->setting('yandex_delivery_token', ''));
+        $testToken = (string) config('services.yandex_delivery.test_token');
+        $testMode = (bool) $tenant->setting('yandex_delivery_test_mode', false);
+
+        // Свой ключ — никогда на tst
+        if ($token !== '' && $token !== $testToken) {
+            return false;
+        }
+
+        if ($token === $testToken && $token !== '') {
+            return true;
+        }
+
+        if ($token === '' && config('services.yandex_delivery.fallback_to_test')) {
+            return true;
+        }
+
+        return $testMode && ($token === '' || $token === $testToken);
+    }
+
     protected function credentials(Tenant $tenant): array
     {
         $token = trim((string) $tenant->setting('yandex_delivery_token', ''));
@@ -40,26 +65,24 @@ class YandexDeliveryService
         $taxiClass = (string) ($tenant->setting('yandex_delivery_taxi_class') ?: 'express');
         $lon = $tenant->setting('yandex_delivery_source_lon');
         $lat = $tenant->setting('yandex_delivery_source_lat');
-        $testMode = (bool) $tenant->setting('yandex_delivery_test_mode', false);
 
         $testToken = (string) config('services.yandex_delivery.test_token');
-        $testBase = rtrim((string) config('services.yandex_delivery.test_base_url'), '/');
-        $prodBase = rtrim((string) config('services.yandex_delivery.prod_base_url'), '/');
-
-        $useTest = $testMode
-            || ($token !== '' && $token === $testToken)
-            || ($token === '' && config('services.yandex_delivery.fallback_to_test'));
+        $useTest = $this->isTestContour($tenant);
 
         if ($token === '' && $useTest) {
             $token = $testToken;
         }
+
         if ($source === '' && $useTest) {
             $source = (string) config('services.yandex_delivery.test_source_address');
             $lon = config('services.yandex_delivery.test_source_lon');
             $lat = config('services.yandex_delivery.test_source_lat');
         }
 
+        $testBase = rtrim((string) config('services.yandex_delivery.test_base_url'), '/');
+        $prodBase = rtrim((string) config('services.yandex_delivery.prod_base_url'), '/');
         $baseUrl = $useTest ? $testBase : $prodBase;
+
         $customBase = trim((string) $tenant->setting('yandex_delivery_base_url', ''));
         if ($customBase !== '') {
             $baseUrl = rtrim($customBase, '/');
@@ -72,18 +95,8 @@ class YandexDeliveryService
             ($lon !== null && $lon !== '') ? (float) $lon : null,
             ($lat !== null && $lat !== '') ? (float) $lat : null,
             in_array($taxiClass, ['courier', 'express', 'cargo'], true) ? $taxiClass : 'express',
+            $useTest,
         ];
-    }
-
-    protected function useTestContour(Tenant $tenant): bool
-    {
-        $token = trim((string) $tenant->setting('yandex_delivery_token', ''));
-        $testToken = (string) config('services.yandex_delivery.test_token');
-        $testMode = (bool) $tenant->setting('yandex_delivery_test_mode', false);
-
-        return $testMode
-            || ($token !== '' && $token === $testToken)
-            || ($token === '' && config('services.yandex_delivery.fallback_to_test'));
     }
 
     protected function platformStationId(Tenant $tenant): string
@@ -93,9 +106,11 @@ class YandexDeliveryService
             return $station;
         }
 
-        return $this->useTestContour($tenant)
-            ? (string) config('services.yandex_delivery.test_station_id')
-            : '';
+        if ($this->isTestContour($tenant)) {
+            return (string) config('services.yandex_delivery.test_station_id');
+        }
+
+        return '';
     }
 
     protected function platformBaseUrl(Tenant $tenant): string
@@ -105,7 +120,7 @@ class YandexDeliveryService
             return rtrim($custom, '/');
         }
 
-        return $this->useTestContour($tenant)
+        return $this->isTestContour($tenant)
             ? rtrim((string) config('services.yandex_delivery.platform_test_base_url'), '/')
             : rtrim((string) config('services.yandex_delivery.platform_prod_base_url'), '/');
     }
@@ -119,8 +134,15 @@ class YandexDeliveryService
         ?float $heightM = 0.15,
         int $quantity = 1,
     ): ?array {
-        [$token, $sourceAddress, $baseUrl, $srcLon, $srcLat, $taxiClass] = $this->credentials($tenant);
+        [$token, $sourceAddress, $baseUrl, $srcLon, $srcLat, $taxiClass, $useTest] = $this->credentials($tenant);
+
         if ($token === '' || $sourceAddress === '' || trim($destinationAddress) === '') {
+            Log::info('Yandex Express skip', [
+                'has_token' => $token !== '',
+                'has_source' => $sourceAddress !== '',
+                'test' => $useTest,
+            ]);
+
             return null;
         }
 
@@ -150,10 +172,16 @@ class YandexDeliveryService
 
         try {
             $response = Http::withToken($token)->acceptJson()
-                ->withHeaders(['Accept-Language' => 'ru'])->timeout(15)
+                ->withHeaders(['Accept-Language' => 'ru'])->timeout(20)
                 ->post($baseUrl.'/b2b/cargo/integration/v2/check-price', $payload);
 
             if (! $response->successful()) {
+                Log::warning('Yandex Express failed', [
+                    'status' => $response->status(),
+                    'base' => $baseUrl,
+                    'body' => mb_substr($response->body(), 0, 400),
+                ]);
+
                 return null;
             }
 
@@ -180,7 +208,7 @@ class YandexDeliveryService
 
             return $result;
         } catch (\Throwable $e) {
-            Log::debug('Yandex Express: '.$e->getMessage());
+            Log::warning('Yandex Express: '.$e->getMessage());
 
             return null;
         }
@@ -193,11 +221,17 @@ class YandexDeliveryService
         float $assessedRub = 1000.0,
         string $tariff = 'time_interval',
     ): ?array {
-        [$token] = $this->credentials($tenant);
+        [$token, , , , , , $useTest] = $this->credentials($tenant);
         $station = $this->platformStationId($tenant);
         $baseUrl = $this->platformBaseUrl($tenant);
 
         if ($token === '' || $station === '' || trim($destinationAddress) === '') {
+            Log::info('Yandex Platform skip', [
+                'has_token' => $token !== '',
+                'has_station' => $station !== '',
+                'test' => $useTest,
+            ]);
+
             return null;
         }
 
@@ -213,10 +247,16 @@ class YandexDeliveryService
 
         try {
             $response = Http::withToken($token)->acceptJson()
-                ->withHeaders(['Accept-Language' => 'ru'])->timeout(15)
+                ->withHeaders(['Accept-Language' => 'ru'])->timeout(20)
                 ->post($baseUrl.'/api/b2b/platform/pricing-calculator', $payload);
 
             if (! $response->successful()) {
+                Log::warning('Yandex Platform failed', [
+                    'status' => $response->status(),
+                    'base' => $baseUrl,
+                    'body' => mb_substr($response->body(), 0, 400),
+                ]);
+
                 return null;
             }
 
@@ -244,7 +284,7 @@ class YandexDeliveryService
                 'raw' => $json,
             ];
         } catch (\Throwable $e) {
-            Log::debug('Yandex Platform: '.$e->getMessage());
+            Log::warning('Yandex Platform: '.$e->getMessage());
 
             return null;
         }
@@ -257,6 +297,12 @@ class YandexDeliveryService
         float $assessedRub = 1000.0,
     ): array {
         $options = [];
+        $meta = [
+            'test_contour' => $this->isTestContour($tenant),
+            'express_configured' => $this->isConfigured($tenant),
+            'platform_configured' => $this->isPlatformConfigured($tenant),
+        ];
+
         $express = $this->checkPrice($tenant, $destinationAddress, $weightKg);
         if ($express !== null) {
             $options[] = $express;
@@ -275,6 +321,7 @@ class YandexDeliveryService
             'address' => $destinationAddress,
             'options' => $options,
             'min_price' => $options !== [] ? $options[0]['price'] : null,
+            'meta' => $meta,
         ];
     }
 
