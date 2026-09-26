@@ -62,10 +62,13 @@ class ShopSettings extends Page implements HasForms
             'yookassa_shop_id' => (string) ($settings['yookassa_shop_id'] ?? ''),
             'yookassa_secret_key' => (string) ($settings['yookassa_secret_key'] ?? ''),
             'yandex_delivery_token' => (string) ($settings['yandex_delivery_token'] ?? ''),
+            'yandex_delivery_station_id' => (string) ($settings['yandex_delivery_station_id'] ?? ''),
+            'yandex_delivery_default_city' => (string) ($settings['yandex_delivery_default_city'] ?? 'Москва'),
             'yandex_delivery_source_address' => (string) ($settings['yandex_delivery_source_address'] ?? ''),
             'yandex_delivery_source_lon' => $settings['yandex_delivery_source_lon'] ?? null,
             'yandex_delivery_source_lat' => $settings['yandex_delivery_source_lat'] ?? null,
             'yandex_delivery_taxi_class' => (string) ($settings['yandex_delivery_taxi_class'] ?? 'express'),
+            'yandex_delivery_test_mode' => (bool) ($settings['yandex_delivery_test_mode'] ?? false),
             'logo_path' => $tenant->logo_path,
             'custom_domain' => (string) ($tenant->domains()->where('is_primary', true)->value('domain') ?? ''),
         ]);
@@ -131,36 +134,51 @@ class ShopSettings extends Page implements HasForms
                     ])
                     ->columns(2),
                 Section::make('Яндекс Доставка')
-                    ->description('Расчёт стоимости курьера на checkout. Токен OAuth из кабинета B2B Яндекс Доставки. Способ доставки с кодом «yandex» в справочнике.')
+                    ->description('Боевой контур: OAuth-токен + ID станции отгрузки. Адрес склада — только для Express.')
                     ->schema([
                         TextInput::make('yandex_delivery_token')
-                            ->label('OAuth-токен')
+                            ->label('Yandex API key (OAuth)')
                             ->password()
                             ->revealable()
                             ->maxLength(512)
-                            ->helperText('Кабинет: dostavka.yandex.ru → API'),
-                        TextInput::make('yandex_delivery_source_address')
-                            ->label('Адрес склада / точки отправления')
-                            ->placeholder('Москва, ул. Примерная, 1')
-                            ->maxLength(500)
+                            ->helperText('dostavka.yandex.ru → Интеграции → Получить токен')
                             ->columnSpanFull(),
-                        TextInput::make('yandex_delivery_source_lon')
-                            ->label('Долгота (lon)')
-                            ->numeric()
-                            ->step(0.000001)
-                            ->helperText('Опционально, точнее геокодера'),
-                        TextInput::make('yandex_delivery_source_lat')
-                            ->label('Широта (lat)')
-                            ->numeric()
-                            ->step(0.000001),
+                        TextInput::make('yandex_delivery_station_id')
+                            ->label('ID станции отгрузки')
+                            ->helperText('platform_station_id из кабинета (как в «Параметры соединения»). Нужен для доставки по России.')
+                            ->maxLength(64)
+                            ->columnSpanFull(),
+                        TextInput::make('yandex_delivery_default_city')
+                            ->label('Город по умолчанию')
+                            ->placeholder('Москва')
+                            ->maxLength(120),
                         Select::make('yandex_delivery_taxi_class')
-                            ->label('Тариф')
+                            ->label('Тариф Express')
                             ->options([
                                 'courier' => 'Курьер',
                                 'express' => 'Экспресс',
                                 'cargo' => 'Грузовой',
                             ])
                             ->default('express'),
+                        TextInput::make('yandex_delivery_source_address')
+                            ->label('Адрес склада (только Express)')
+                            ->helperText('Не обязателен при ID станции. Нужен для «Курьер сегодня».')
+                            ->maxLength(500)
+                            ->placeholder('Москва, ул. …')
+                            ->columnSpanFull(),
+                        TextInput::make('yandex_delivery_source_lon')
+                            ->label('Долгота склада')
+                            ->numeric()
+                            ->step(0.000001),
+                        TextInput::make('yandex_delivery_source_lat')
+                            ->label('Широта склада')
+                            ->numeric()
+                            ->step(0.000001),
+                        Toggle::make('yandex_delivery_test_mode')
+                            ->label('Тестовый контур')
+                            ->helperText('Только без своего ключа. Боевой токен всегда на prod API.')
+                            ->default(false)
+                            ->columnSpanFull(),
                     ])
                     ->columns(2),
                 Section::make('Свой домен')
@@ -205,7 +223,6 @@ class ShopSettings extends Page implements HasForms
             return $ctx->loadMissing('theme');
         }
 
-        // Супер-админ без привязки — первый магазин (или выбранный в сессии)
         if ($user !== null && method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin()) {
             $sessionId = session('filament_shop_tenant_id');
             $tenant = $sessionId
@@ -278,6 +295,8 @@ class ShopSettings extends Page implements HasForms
         $settings['yookassa_shop_id'] = trim((string) ($data['yookassa_shop_id'] ?? '')) ?: null;
         $settings['yookassa_secret_key'] = trim((string) ($data['yookassa_secret_key'] ?? '')) ?: null;
         $settings['yandex_delivery_token'] = trim((string) ($data['yandex_delivery_token'] ?? '')) ?: null;
+        $settings['yandex_delivery_station_id'] = trim((string) ($data['yandex_delivery_station_id'] ?? '')) ?: null;
+        $settings['yandex_delivery_default_city'] = trim((string) ($data['yandex_delivery_default_city'] ?? '')) ?: null;
         $settings['yandex_delivery_source_address'] = trim((string) ($data['yandex_delivery_source_address'] ?? '')) ?: null;
         $lon = $data['yandex_delivery_source_lon'] ?? null;
         $lat = $data['yandex_delivery_source_lat'] ?? null;
@@ -286,6 +305,7 @@ class ShopSettings extends Page implements HasForms
         $settings['yandex_delivery_taxi_class'] = in_array(($data['yandex_delivery_taxi_class'] ?? ''), ['courier', 'express', 'cargo'], true)
             ? $data['yandex_delivery_taxi_class']
             : 'express';
+        $settings['yandex_delivery_test_mode'] = (bool) ($data['yandex_delivery_test_mode'] ?? false);
 
         $logo = $data['logo_path'] ?? null;
         if (is_array($logo)) {
