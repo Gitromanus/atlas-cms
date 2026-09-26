@@ -72,6 +72,8 @@ Route::prefix('{shop}')
         Route::post('/track', [OrderTrackController::class, 'lookup'])->name('order.track.lookup');
 
         Route::post('/delivery/calculate', [DeliveryController::class, 'calculate'])->name('delivery.calculate');
+        Route::get('/delivery/estimate', [DeliveryController::class, 'estimate'])->name('delivery.estimate');
+        Route::post('/delivery/estimate', [DeliveryController::class, 'estimate']);
         Route::get('/checkout', [CheckoutController::class, 'index'])->name('checkout.index');
         Route::post('/checkout', [CheckoutController::class, 'store'])->name('checkout.store');
         Route::get('/order/success/{order}', [CheckoutController::class, 'success'])->name('checkout.success');
