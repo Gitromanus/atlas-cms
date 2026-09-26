@@ -7,29 +7,75 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Клиент B2B API Яндекс Доставки (Express).
+ * Клиент B2B API Яндекс Доставки (Express / check-price).
  *
- * Документация: POST /b2b/cargo/integration/v2/check-price
+ * Боевой хост: https://b2b.taxi.yandex.net
+ * Тестовый:    https://b2b.taxi.tst.yandex.net (только Москва)
+ *
  * Auth: Authorization: Bearer <OAuth-токен>
  */
 class YandexDeliveryService
 {
-    protected string $baseUrl = 'https://b2b.taxi.yandex.net';
-
     public function isConfigured(?Tenant $tenant): bool
     {
         if ($tenant === null) {
             return false;
         }
 
-        return filled($tenant->setting('yandex_delivery_token'))
-            && filled($tenant->setting('yandex_delivery_source_address'));
+        [$token, $source] = $this->credentials($tenant);
+
+        return $token !== '' && $source !== '';
     }
 
     /**
-     * Предварительный расчёт стоимости курьерской доставки.
-     *
-     * @return array{price: float, currency: string, taxi_class: string, raw?: array}|null
+     * @return array{0: string, 1: string, 2: string, 3: ?float, 4: ?float, 5: string}
+     */
+    protected function credentials(Tenant $tenant): array
+    {
+        $token = trim((string) $tenant->setting('yandex_delivery_token', ''));
+        $source = trim((string) $tenant->setting('yandex_delivery_source_address', ''));
+        $taxiClass = (string) ($tenant->setting('yandex_delivery_taxi_class') ?: 'express');
+        $lon = $tenant->setting('yandex_delivery_source_lon');
+        $lat = $tenant->setting('yandex_delivery_source_lat');
+        $testMode = (bool) $tenant->setting('yandex_delivery_test_mode', false);
+
+        $testToken = (string) config('services.yandex_delivery.test_token');
+        $testBase = rtrim((string) config('services.yandex_delivery.test_base_url'), '/');
+        $prodBase = rtrim((string) config('services.yandex_delivery.prod_base_url'), '/');
+
+        $useTest = $testMode
+            || ($token !== '' && $token === $testToken)
+            || ($token === '' && config('services.yandex_delivery.fallback_to_test'));
+
+        if ($token === '' && $useTest) {
+            $token = $testToken;
+        }
+
+        if ($source === '' && $useTest) {
+            $source = (string) config('services.yandex_delivery.test_source_address');
+            $lon = config('services.yandex_delivery.test_source_lon');
+            $lat = config('services.yandex_delivery.test_source_lat');
+        }
+
+        $baseUrl = $useTest ? $testBase : $prodBase;
+
+        $customBase = trim((string) $tenant->setting('yandex_delivery_base_url', ''));
+        if ($customBase !== '') {
+            $baseUrl = rtrim($customBase, '/');
+        }
+
+        return [
+            $token,
+            $source,
+            $baseUrl,
+            ($lon !== null && $lon !== '') ? (float) $lon : null,
+            ($lat !== null && $lat !== '') ? (float) $lat : null,
+            in_array($taxiClass, ['courier', 'express', 'cargo'], true) ? $taxiClass : 'express',
+        ];
+    }
+
+    /**
+     * @return array{price: float, currency: string, taxi_class: string, distance_meters?: float, eta?: float, raw?: array}|null
      */
     public function checkPrice(
         Tenant $tenant,
@@ -40,9 +86,7 @@ class YandexDeliveryService
         ?float $heightM = 0.15,
         int $quantity = 1,
     ): ?array {
-        $token = (string) $tenant->setting('yandex_delivery_token');
-        $sourceAddress = (string) $tenant->setting('yandex_delivery_source_address');
-        $taxiClass = (string) ($tenant->setting('yandex_delivery_taxi_class') ?: 'express');
+        [$token, $sourceAddress, $baseUrl, $srcLon, $srcLat, $taxiClass] = $this->credentials($tenant);
 
         if ($token === '' || $sourceAddress === '' || trim($destinationAddress) === '') {
             return null;
@@ -52,10 +96,8 @@ class YandexDeliveryService
             'id' => 1,
             'fullname' => $sourceAddress,
         ];
-        $srcLon = $tenant->setting('yandex_delivery_source_lon');
-        $srcLat = $tenant->setting('yandex_delivery_source_lat');
-        if ($srcLon !== null && $srcLat !== null && $srcLon !== '' && $srcLat !== '') {
-            $sourcePoint['coordinates'] = [(float) $srcLon, (float) $srcLat];
+        if ($srcLon !== null && $srcLat !== null) {
+            $sourcePoint['coordinates'] = [$srcLon, $srcLat];
         }
 
         $destPoint = [
@@ -79,9 +121,7 @@ class YandexDeliveryService
             ],
             'route_points' => [$sourcePoint, $destPoint],
             'requirements' => [
-                'taxi_class' => in_array($taxiClass, ['courier', 'express', 'cargo'], true)
-                    ? $taxiClass
-                    : 'express',
+                'taxi_class' => $taxiClass,
             ],
         ];
 
@@ -90,11 +130,12 @@ class YandexDeliveryService
                 ->acceptJson()
                 ->withHeaders(['Accept-Language' => 'ru'])
                 ->timeout(15)
-                ->post($this->baseUrl.'/b2b/cargo/integration/v2/check-price', $payload);
+                ->post($baseUrl.'/b2b/cargo/integration/v2/check-price', $payload);
 
             if (! $response->successful()) {
                 Log::warning('Yandex Delivery check-price failed', [
                     'status' => $response->status(),
+                    'base' => $baseUrl,
                     'body' => mb_substr($response->body(), 0, 500),
                 ]);
 
@@ -110,12 +151,21 @@ class YandexDeliveryService
                 return null;
             }
 
-            return [
+            $result = [
                 'price' => $price,
                 'currency' => 'RUB',
                 'taxi_class' => $taxiClass,
                 'raw' => $json,
             ];
+
+            if (isset($json['distance_meters'])) {
+                $result['distance_meters'] = (float) $json['distance_meters'];
+            }
+            if (isset($json['eta'])) {
+                $result['eta'] = (float) $json['eta'];
+            }
+
+            return $result;
         } catch (\Throwable $e) {
             Log::warning('Yandex Delivery exception: '.$e->getMessage());
 
