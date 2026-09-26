@@ -26,6 +26,11 @@ class Product extends Model
         'unit',
         'ext_id',
         'is_active',
+        'is_new',
+        'is_hit',
+        'is_sale',
+        'meta_title',
+        'meta_description',
         'is_deleted_from_1c',
     ];
 
@@ -33,6 +38,9 @@ class Product extends Model
     {
         return [
             'is_active' => 'boolean',
+            'is_new' => 'boolean',
+            'is_hit' => 'boolean',
+            'is_sale' => 'boolean',
             'is_deleted_from_1c' => 'boolean',
         ];
     }
@@ -91,62 +99,8 @@ class Product extends Model
 
     public function hasVariants(): bool
     {
-        return $this->variants()->whereNotNull('options')->exists();
-    }
-
-    public function variantQuantity(array $options): ?float
-    {
-        if ($options === []) {
-            return null;
-        }
-
-        $normalized = $this->normalizeOptionsMap($options);
-
-        foreach ($this->variants as $variant) {
-            if ($this->normalizeOptionsMap($variant->options ?? []) == $normalized) {
-                return (float) $variant->quantity;
-            }
-        }
-
-        return null;
-    }
-
-    public function variantPriceRange(): ?array
-    {
-        $prices = $this->variants
-            ->pluck('price')
-            ->filter(fn ($price): bool => $price !== null)
-            ->map(fn ($price): float => (float) $price)
-            ->values();
-
-        if ($prices->isEmpty()) {
-            return null;
-        }
-
-        return [
-            'min' => $prices->min(),
-            'max' => $prices->max(),
-        ];
-    }
-
-    public function variantStockTotal(): float
-    {
-        return (float) $this->variants->sum('quantity');
-    }
-
-    protected function normalizeOptionsMap(array $map): array
-    {
-        $result = [];
-
-        foreach ($map as $key => $value) {
-            if ($value !== null && $value !== '') {
-                $result[(string) $key] = (string) $value;
-            }
-        }
-
-        ksort($result);
-
-        return $result;
+        return $this->variants()->whereNotNull('options_hash')->exists()
+            || $this->features()->where('is_variant', true)->exists();
     }
 
     public function prices(): HasMany
@@ -224,5 +178,20 @@ class Product extends Model
     public function reviewsCount(): int
     {
         return (int) $this->approvedReviews()->count();
+    }
+
+    public function scopeHits(Builder $query): Builder
+    {
+        return $query->where('is_hit', true);
+    }
+
+    public function scopeNewArrivals(Builder $query): Builder
+    {
+        return $query->where('is_new', true);
+    }
+
+    public function scopeOnSale(Builder $query): Builder
+    {
+        return $query->where('is_sale', true);
     }
 }
