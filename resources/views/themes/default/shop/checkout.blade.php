@@ -5,10 +5,11 @@
 @section('content')
     <h1 class="mb-6 text-3xl font-bold">Оформление заказа</h1>
 
-    <div class="grid gap-8 lg:grid-cols-5" x-data="checkoutDelivery()">
+    <div class="grid gap-8 lg:grid-cols-5" x-data="checkoutDelivery()" x-init="init()">
         <form method="POST" action="{{ route('checkout.store') }}" class="lg:col-span-3" @submit="beforeSubmit">
             @csrf
             <input type="hidden" name="delivery_cost" :value="deliveryPrice ?? ''">
+            <input type="hidden" name="yandex_tariff" :value="tariff">
 
             <div class="space-y-4 rounded-theme bg-white p-6 shadow-sm">
                 <h2 class="text-lg font-bold">Контактные данные</h2>
@@ -36,10 +37,15 @@
                 @if ($deliveryMethods->isNotEmpty())
                     <div class="space-y-2">
                         @foreach ($deliveryMethods as $method)
-                            @php $isYandex = in_array(strtolower((string) $method->code), ['yandex', 'yandex_delivery', 'yandex-delivery'], true); @endphp
+                            @php
+                                $code = strtolower((string) $method->code);
+                                $isYandex = str_starts_with($code, 'yandex');
+                                $isPvz = in_array($code, ['yandex_pvz', 'yandex_pickup'], true);
+                            @endphp
                             <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3 hover:border-primary/40">
                                 <input type="radio" name="delivery_method_id" value="{{ $method->id }}" class="mt-1"
                                        data-yandex="{{ $isYandex ? '1' : '0' }}"
+                                       data-tariff="{{ $isPvz ? 'self_pickup' : (str_contains($code, 'russia') || str_contains($code, 'ndd') ? 'time_interval' : 'auto') }}"
                                        data-price="{{ $method->costFor($total) }}"
                                        data-require-address="{{ $method->require_address ? '1' : '0' }}"
                                        x-model="methodId" @change="onMethodChange"
@@ -66,11 +72,35 @@
                     </div>
                 @endif
 
+                <div x-show="isYandex" x-cloak class="space-y-2">
+                    <p class="text-sm font-medium text-slate-700">Тип доставки Яндекс</p>
+                    <div class="flex flex-wrap gap-2">
+                        <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                               :class="tariff === 'time_interval' && 'ring-2 ring-primary border-primary'">
+                            <input type="radio" value="time_interval" x-model="tariff" @change="recalc">
+                            До двери
+                        </label>
+                        <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                               :class="tariff === 'self_pickup' && 'ring-2 ring-primary border-primary'">
+                            <input type="radio" value="self_pickup" x-model="tariff" @change="recalc">
+                            В пункт выдачи
+                        </label>
+                        <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                               :class="tariff === 'express' && 'ring-2 ring-primary border-primary'">
+                            <input type="radio" value="express" x-model="tariff" @change="recalc">
+                            Курьер сегодня
+                        </label>
+                    </div>
+                </div>
+
                 <div x-show="needAddress" x-cloak>
-                    <label class="mb-1 block text-sm font-medium">Адрес доставки *</label>
+                    <label class="mb-1 block text-sm font-medium">
+                        <span x-text="tariff === 'self_pickup' ? 'Город / адрес (для ПВЗ) *' : 'Адрес доставки *'"></span>
+                    </label>
                     <textarea name="delivery_address" rows="2" x-model="address" @blur="recalc"
-                              placeholder="Город, улица, дом, квартира"
+                              :placeholder="tariff === 'self_pickup' ? 'Город, улица' : 'Город, улица, дом, квартира'"
                               class="w-full rounded-theme border border-slate-300 px-4 py-2 focus:border-primary focus:outline-none">{{ old('delivery_address') }}</textarea>
+                    <p class="mt-1 text-xs text-slate-500" x-show="isYandex && tariff === 'self_pickup'">Укажите город — рассчитаем доставку в пункт выдачи</p>
                 </div>
                 <div class="rounded-lg bg-slate-50 px-3 py-2 text-sm" x-show="statusMessage" x-text="statusMessage"
                      :class="calcError ? 'text-amber-700' : 'text-slate-600'"></div>
@@ -129,7 +159,9 @@
                 methodId: @json(old('delivery_method_id', $deliveryMethods->first()?->id)),
                 legacyMethod: @json(old('delivery_method', 'pickup')),
                 address: @json(old('delivery_address', '')),
-                deliveryPrice: null, calculating: false, calcError: false, statusMessage: '', isYandex: false, needAddress: true,
+                tariff: @json(old('yandex_tariff', 'self_pickup')),
+                deliveryPrice: null, calculating: false, calcError: false, statusMessage: '',
+                isYandex: false, needAddress: true,
                 init() { this.onMethodChange(); },
                 selectedRadio() { return document.querySelector('input[name="delivery_method_id"]:checked'); },
                 onMethodChange() {
@@ -137,8 +169,16 @@
                     if (radio) {
                         this.isYandex = radio.dataset.yandex === '1';
                         this.needAddress = radio.dataset.requireAddress === '1' || this.isYandex;
-                        if (!this.isYandex) { this.deliveryPrice = parseFloat(radio.dataset.price || '0'); this.statusMessage = ''; this.calcError = false; }
-                        else { this.deliveryPrice = null; this.recalc(); }
+                        const t = radio.dataset.tariff || 'auto';
+                        if (t === 'self_pickup') this.tariff = 'self_pickup';
+                        else if (t === 'time_interval') this.tariff = 'time_interval';
+                        else if (this.isYandex && !['self_pickup','time_interval','express'].includes(this.tariff)) this.tariff = 'self_pickup';
+                        if (!this.isYandex) {
+                            this.deliveryPrice = parseFloat(radio.dataset.price || '0');
+                            this.statusMessage = ''; this.calcError = false;
+                        } else {
+                            this.deliveryPrice = null; this.recalc();
+                        }
                     } else {
                         this.isYandex = this.legacyMethod === 'yandex';
                         this.needAddress = this.legacyMethod !== 'pickup';
@@ -149,7 +189,11 @@
                     }
                 },
                 async recalc() {
-                    if (this.isYandex && !(this.address || '').trim()) { this.statusMessage = 'Введите адрес для расчёта'; this.deliveryPrice = null; return; }
+                    if (!this.isYandex) return;
+                    if (!(this.address || '').trim()) {
+                        this.statusMessage = 'Введите адрес или город для расчёта';
+                        this.deliveryPrice = null; this.calcError = true; return;
+                    }
                     this.calculating = true; this.statusMessage = 'Считаем…'; this.calcError = false;
                     try {
                         const body = new URLSearchParams();
@@ -157,12 +201,21 @@
                         if (this.methodId) body.set('delivery_method_id', this.methodId);
                         if (this.legacyMethod) body.set('delivery_method', this.legacyMethod);
                         body.set('address', this.address || '');
-                        const res = await fetch(calcUrl, { method: 'POST', headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': csrf, 'X-Requested-With': 'XMLHttpRequest' }, body });
+                        body.set('tariff', this.tariff || 'self_pickup');
+                        const res = await fetch(calcUrl, {
+                            method: 'POST',
+                            headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': csrf, 'X-Requested-With': 'XMLHttpRequest' },
+                            body, credentials: 'same-origin'
+                        });
                         const data = await res.json();
                         if (data.price !== null && data.price !== undefined) this.deliveryPrice = parseFloat(data.price);
-                        this.statusMessage = data.message || ''; this.calcError = !data.ok;
-                    } catch (e) { this.statusMessage = 'Ошибка сети'; this.calcError = true; }
-                    finally { this.calculating = false; }
+                        this.statusMessage = data.message || data.label || '';
+                        this.calcError = !data.ok;
+                    } catch (e) {
+                        this.statusMessage = 'Ошибка сети'; this.calcError = true;
+                    } finally {
+                        this.calculating = false;
+                    }
                 },
                 get deliveryLabel() {
                     if (this.deliveryPrice === null) return '—';
@@ -174,7 +227,10 @@
                     return new Intl.NumberFormat('ru-RU').format(Math.round(itemsTotal + d)) + ' ₽';
                 },
                 beforeSubmit(e) {
-                    if (this.isYandex && !(this.address || '').trim()) { e.preventDefault(); this.statusMessage = 'Укажите адрес'; this.calcError = true; }
+                    if (this.isYandex && !(this.address || '').trim()) {
+                        e.preventDefault();
+                        this.statusMessage = 'Укажите адрес'; this.calcError = true;
+                    }
                 },
             };
         }
