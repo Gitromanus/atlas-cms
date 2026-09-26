@@ -47,10 +47,17 @@ class CartService
     {
         $optionsJson = $this->normalizeOptions($options);
 
-        $item = $this->query()
-            ->where('product_id', $product->id)
-            ->where('options', $optionsJson)
-            ->first();
+        $itemQuery = $this->query()->where('product_id', $product->id);
+        if ($optionsJson === null) {
+            $itemQuery->where(function ($q) {
+                $q->whereNull('options')
+                    ->orWhere('options', '[]')
+                    ->orWhere('options', '{}');
+            });
+        } else {
+            $itemQuery->where('options', $optionsJson);
+        }
+        $item = $itemQuery->first();
 
         if ($item !== null) {
             $item->increment('quantity', $quantity);
