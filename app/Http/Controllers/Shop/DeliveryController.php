@@ -31,6 +31,7 @@ class DeliveryController extends Controller
             'delivery_method_id' => ['nullable', 'integer'],
             'delivery_method' => ['nullable', 'string', 'max:64'],
             'address' => ['nullable', 'string', 'max:1000'],
+            'tariff' => ['nullable', 'string', 'in:self_pickup,time_interval,express,auto'],
         ]);
 
         $itemsTotal = (float) $this->cart->total();
@@ -41,10 +42,10 @@ class DeliveryController extends Controller
         }
 
         $code = strtolower((string) ($method?->code ?? $validated['delivery_method'] ?? ''));
-        $useExpress = in_array($code, ['yandex', 'yandex_delivery', 'yandex-delivery', 'yandex_express'], true);
-        $useRussia = in_array($code, ['yandex_russia', 'yandex_ndd', 'yandex_platform', 'yandex-russia'], true);
+        $isYandex = str_starts_with($code, 'yandex')
+            || in_array($code, ['yandex', 'yandex_delivery', 'yandex-delivery', 'yandex_express', 'yandex_russia', 'yandex_pvz', 'yandex_ndd', 'yandex_platform'], true);
 
-        if ($useExpress || $useRussia) {
+        if ($isYandex) {
             if (! $this->yandex->isConfigured($tenant)) {
                 return response()->json([
                     'ok' => false,
@@ -55,24 +56,44 @@ class DeliveryController extends Controller
 
             $address = trim((string) ($validated['address'] ?? ''));
             if ($address === '') {
-                return response()->json(['ok' => false, 'message' => 'Укажите адрес доставки для расчёта', 'price' => null]);
+                return response()->json(['ok' => false, 'message' => 'Укажите адрес или город для расчёта', 'price' => null]);
             }
 
             $qty = max(1, (int) $this->cart->count());
             $weight = max(0.5, $qty * 0.5);
+            $tariff = (string) ($validated['tariff'] ?? 'auto');
 
-            $result = $useRussia
-                ? $this->yandex->checkPriceRussia($tenant, $address, $weight, max(500, $itemsTotal))
-                : $this->yandex->checkPrice($tenant, $address, $weight);
+            if ($tariff === 'auto' || $tariff === '') {
+                $tariff = match (true) {
+                    in_array($code, ['yandex_pvz', 'yandex_pickup'], true) => 'self_pickup',
+                    in_array($code, ['yandex_russia', 'yandex_ndd', 'yandex_platform'], true) => 'time_interval',
+                    $code === 'yandex_express' => 'express',
+                    default => 'self_pickup',
+                };
+            }
 
-            if ($result === null && $useExpress) {
-                $result = $this->yandex->checkPriceRussia($tenant, $address, $weight, max(500, $itemsTotal));
+            $result = null;
+            if ($tariff === 'express') {
+                $result = $this->yandex->checkPrice($tenant, $address, $weight);
+                if ($result === null) {
+                    $result = $this->yandex->checkPriceRussia($tenant, $address, $weight, max(500, $itemsTotal), 'time_interval');
+                }
+            } elseif (in_array($tariff, ['self_pickup', 'time_interval'], true)) {
+                $result = $this->yandex->checkPriceRussia($tenant, $address, $weight, max(500, $itemsTotal), $tariff);
+            } else {
+                $result = $this->yandex->checkPriceRussia($tenant, $address, $weight, max(500, $itemsTotal), 'self_pickup');
+                if ($result === null) {
+                    $result = $this->yandex->checkPriceRussia($tenant, $address, $weight, max(500, $itemsTotal), 'time_interval');
+                }
+                if ($result === null) {
+                    $result = $this->yandex->checkPrice($tenant, $address, $weight);
+                }
             }
 
             if ($result === null) {
                 return response()->json([
                     'ok' => false,
-                    'message' => 'Не удалось рассчитать. Проверьте токен и ID станции отгрузки.',
+                    'message' => 'Не удалось рассчитать. Проверьте токен, ID станции и адрес.',
                     'price' => $method ? (float) $method->costFor($itemsTotal) : null,
                     'source' => 'fallback',
                 ]);
@@ -85,6 +106,7 @@ class DeliveryController extends Controller
                 'type' => $result['type'] ?? 'yandex',
                 'label' => $result['label'] ?? null,
                 'delivery_days' => $result['delivery_days'] ?? null,
+                'tariff' => $tariff,
                 'source' => 'yandex',
                 'message' => $result['label'] ?? 'Стоимость по тарифу Яндекс Доставки',
             ]);
@@ -152,13 +174,13 @@ class DeliveryController extends Controller
         $hint = null;
         if ($estimate['options'] === []) {
             if (empty($meta['platform_configured']) && empty($meta['express_configured'])) {
-                $hint = 'В настройках магазина укажите OAuth-токен и ID станции отгрузки.';
+                $hint = 'В настройках укажите OAuth-токен и ID станции отгрузки.';
             } elseif (empty($meta['platform_configured'])) {
-                $hint = 'Нет ID станции. В «Настройки магазина» → Яндекс Доставка вставьте platform_station_id.';
+                $hint = 'Нет ID станции. Вставьте platform_station_id в настройках магазина.';
             } elseif (! empty($meta['test_contour'])) {
-                $hint = 'Тестовый контур. Для боевого ключа проверьте город назначения.';
+                $hint = 'Тестовый контур. Проверьте город назначения.';
             } else {
-                $hint = 'API не вернул тарифы для этого города. Проверьте токен и ID станции.';
+                $hint = 'API не вернул тарифы. Проверьте токен и ID станции.';
             }
         }
 
