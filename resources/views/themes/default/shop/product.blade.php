@@ -102,6 +102,8 @@
                 </div>
             @endif
 
+            @include('shop.partials.delivery-estimate', ['product' => $product])
+
             <form method="POST" action="{{ route('cart.add') }}" class="mt-8">
                 @csrf
                 <input type="hidden" name="product_id" value="{{ $product->id }}">
