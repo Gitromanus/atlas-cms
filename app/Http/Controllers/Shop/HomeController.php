@@ -8,6 +8,7 @@ use App\Models\Post;
 use App\Models\Product;
 use App\Models\ProductReview;
 use App\Services\Tenant\TenantContext;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
 
 class HomeController extends Controller
@@ -20,10 +21,20 @@ class HomeController extends Controller
         $enableReviews = (bool) $tenant?->setting('enable_reviews', true);
 
         $with = ['images', 'category', 'features', 'variants', 'prices', 'stocks'];
-        $products = Product::query()->active()->with($with)->inStock()->latest()->limit(8)->get();
-        $hits = Product::query()->active()->with($with)->hits()->inStock()->limit(8)->get();
-        $newArrivals = Product::query()->active()->with($with)->newArrivals()->inStock()->limit(8)->get();
-        $saleProducts = Product::query()->active()->with($with)->onSale()->inStock()->limit(8)->get();
+        $base = Product::query()->active()->with($with)->inStock();
+
+        $products = (clone $base)->latest()->limit(8)->get();
+
+        $hasFlags = Schema::hasColumn('products', 'is_hit');
+        $hits = $hasFlags
+            ? (clone $base)->hits()->limit(8)->get()
+            : collect();
+        $newArrivals = $hasFlags
+            ? (clone $base)->newArrivals()->limit(8)->get()
+            : collect();
+        $saleProducts = $hasFlags
+            ? (clone $base)->onSale()->limit(8)->get()
+            : collect();
 
         $categories = collect(Category::menuTree());
 
