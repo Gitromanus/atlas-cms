@@ -22,6 +22,9 @@ class YooKassaService {
         } catch (\Throwable $e) { Log::warning('YooKassa: '.$e->getMessage()); return null; }
     }
     public function handleWebhook(array $payload): ?Order {
+        if (($payload['event'] ?? '') === '' && empty($payload['object'])) {
+            return null;
+        }
         $object = $payload['object'] ?? []; $status = $object['status'] ?? null;
         $paymentId = $object['id'] ?? null; $orderId = $object['metadata']['order_id'] ?? null;
         if (!$orderId || !$paymentId) return null;
