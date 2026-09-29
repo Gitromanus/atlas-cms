@@ -15,74 +15,62 @@
                 $stock = (float) $product->stocks->sum('quantity');
             }
         } catch (\Throwable) {}
-        $props = $product->features->where('is_variant', false)->values();
+        $props = method_exists($product, 'propertyFeatures')
+            ? $product->propertyFeatures()
+            : $product->features->where('is_variant', false)->values();
         $ratingCnt = $product->relationLoaded('approvedReviews') ? $product->approvedReviews->count() : 0;
         $ratingAvg = $ratingCnt ? round($product->approvedReviews->avg('rating'), 1) : null;
 
         $variantGroups = [];
-        foreach ($product->features->where('is_variant', true) as $f) {
-            $n = (string) $f->name;
-            $v = (string) $f->value;
-            if ($n === '' || $v === '') {
-                continue;
+        $hasRealVariants = $product->relationLoaded('variants') && $product->variants->isNotEmpty();
+        if ($hasRealVariants) {
+            foreach ($product->variants as $variant) {
+                foreach ((array) ($variant->options ?? []) as $n => $v) {
+                    if (! filled($v)) {
+                        continue;
+                    }
+                    $variantGroups[(string) $n][(string) $v] = true;
+                }
+                if (empty($variant->options) && filled($variant->name)) {
+                    $variantGroups['Вариант'][(string) $variant->name] = true;
+                }
             }
-            $variantGroups[$n][$v] = true;
-        }
-        foreach ($product->variants ?? [] as $variant) {
-            foreach ((array) ($variant->options ?? []) as $n => $v) {
-                if (! filled($v)) {
+        } else {
+            foreach ($product->features->where('is_variant', true) as $f) {
+                $n = (string) $f->name;
+                $v = (string) $f->value;
+                if ($n === '' || $v === '') {
                     continue;
                 }
-                $variantGroups[(string) $n][(string) $v] = true;
+                $variantGroups[$n][$v] = true;
             }
         }
         $variantGroups = array_map(fn ($vals) => array_keys($vals), $variantGroups);
         $hasVariantPicker = $variantGroups !== [];
 
-        $colorMap = [
-            'белый' => '#ffffff', 'белая' => '#ffffff', 'white' => '#ffffff',
-            'чёрный' => '#111111', 'черный' => '#111111', 'black' => '#111111',
-            'серый' => '#9ca3af', 'gray' => '#9ca3af', 'grey' => '#9ca3af',
-            'красный' => '#ef4444', 'red' => '#ef4444',
-            'синий' => '#3b82f6', 'blue' => '#3b82f6',
-            'голубой' => '#38bdf8',
-            'зелёный' => '#22c55e', 'зеленый' => '#22c55e', 'green' => '#22c55e',
-            'жёлтый' => '#eab308', 'желтый' => '#eab308', 'yellow' => '#eab308',
-            'оранжевый' => '#f97316', 'orange' => '#f97316',
-            'розовый' => '#ec4899', 'pink' => '#ec4899',
-            'фиолетовый' => '#a855f7', 'purple' => '#a855f7',
-            'коричневый' => '#92400e', 'brown' => '#92400e',
-            'бежевый' => '#d6c3a8', 'beige' => '#d6c3a8',
-            'бордовый' => '#9f1239',
-        ];
-        $resolveColor = function (string $value) use ($colorMap): ?string {
-            $key = mb_strtolower(trim($value));
-            if (isset($colorMap[$key])) {
-                return $colorMap[$key];
-            }
-            foreach ($colorMap as $name => $hex) {
-                if (str_contains($key, $name)) {
-                    return $hex;
-                }
-            }
-
-            return null;
-        };
-        $isColorName = function (string $name): bool {
-            $n = mb_strtolower($name);
-
-            return str_contains($n, 'цвет') || str_contains($n, 'color');
-        };
-        $isSizeName = function (string $name): bool {
-            $n = mb_strtolower($name);
-
-            return str_contains($n, 'размер') || str_contains($n, 'size');
-        };
-
         $defaultSelection = [];
         foreach ($variantGroups as $name => $values) {
             $defaultSelection[$name] = $values[0] ?? null;
         }
+
+        $variantsPayload = [];
+        if ($hasRealVariants) {
+            foreach ($product->variants as $variant) {
+                $opts = (array) ($variant->options ?? []);
+                if ($opts === [] && filled($variant->name)) {
+                    $opts = ['Вариант' => (string) $variant->name];
+                }
+                $variantsPayload[] = [
+                    'id' => $variant->id,
+                    'name' => (string) ($variant->name ?? ''),
+                    'options' => $opts,
+                    'price' => $variant->price !== null ? (float) $variant->price : null,
+                    'quantity' => (float) ($variant->quantity ?? 0),
+                ];
+            }
+        }
+        $basePrice = $price !== null ? (float) $price : null;
+        $baseStock = $stock;
     @endphp
 
     <nav class="mb-6 text-sm text-slate-500">
@@ -130,95 +118,76 @@
                 <p class="mt-2 text-sm text-slate-500">Артикул: <span class="font-medium text-slate-700">{{ $product->sku }}</span></p>
             @endif
 
-            <div class="mt-5 flex flex-wrap items-center gap-3">
-                <p class="text-4xl font-black tracking-tight text-primary">
-                    {{ $price !== null ? number_format((float) $price, 0, ',', ' ') . ' ₽' : 'Цена по запросу' }}
-                </p>
-                @if ($ratingAvg)
-                    <a href="#reviews" class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 text-sm font-semibold text-amber-700 ring-1 ring-amber-200">★ {{ $ratingAvg }} <span class="font-normal">({{ $ratingCnt }})</span></a>
-                @endif
-                @if ($stock !== null)
-                    @if ($stock > 0)
-                        <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-200">
-                            <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
-                            В наличии · {{ rtrim(rtrim(number_format($stock, 2, ',', ' '), '0'), ',') }} {{ $product->unit ?: 'шт' }}
-                        </span>
-                    @else
-                        <span class="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-600">Нет в наличии</span>
+            <div class="mt-5 space-y-6"
+                 x-data="productVariants({
+                    defaults: @js($defaultSelection),
+                    groups: @js($variantGroups),
+                    variants: @js($variantsPayload),
+                    basePrice: @js($basePrice),
+                    baseStock: @js($baseStock),
+                 })"
+                 x-cloak>
+
+                <div class="flex flex-wrap items-center gap-3">
+                    <p class="text-4xl font-black tracking-tight text-primary">
+                        <span x-show="displayPrice !== null"><span x-text="formatPrice(displayPrice)"></span> ₽</span>
+                        <span x-show="displayPrice === null">Цена по запросу</span>
+                    </p>
+                    @if ($ratingAvg)
+                        <a href="#reviews" class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1 text-sm font-semibold text-amber-700 ring-1 ring-amber-200">★ {{ $ratingAvg }} <span class="font-normal">({{ $ratingCnt }})</span></a>
                     @endif
-                @endif
-            </div>
-
-            @if ($product->description)
-                <div class="mt-6 max-w-none text-slate-700"><div class="whitespace-pre-line leading-relaxed">{{ $product->description }}</div></div>
-            @endif
-
-            @if ($props->isNotEmpty())
-                <div class="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                    <div class="border-b border-slate-100 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700">Характеристики</div>
-                    <dl class="divide-y divide-slate-100 text-sm">
-                        @foreach ($props as $f)
-                            <div class="grid grid-cols-2 gap-2 px-4 py-2.5 sm:grid-cols-5">
-                                <dt class="text-slate-500 sm:col-span-2">{{ $f->name }}</dt>
-                                <dd class="font-medium text-slate-900 sm:col-span-3">{{ $f->value }}</dd>
-                            </div>
-                        @endforeach
-                    </dl>
+                    <span x-show="displayStock !== null && displayStock > 0" class="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                        <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
+                        В наличии · <span x-text="displayStock"></span> {{ $product->unit ?: 'шт' }}
+                    </span>
+                    <span x-show="displayStock !== null && displayStock <= 0" class="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-600">Нет в наличии</span>
                 </div>
-            @endif
 
-            @include('shop.partials.delivery-estimate', ['product' => $product])
+                @if ($product->description)
+                    <div class="max-w-none text-slate-700"><div class="whitespace-pre-line leading-relaxed">{{ $product->description }}</div></div>
+                @endif
 
-            <div class="mt-8" x-data="productVariants(@json($defaultSelection), @json($variantGroups))" x-cloak>
+                @if ($props->isNotEmpty())
+                    <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                        <div class="border-b border-slate-100 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700">Характеристики</div>
+                        <dl class="divide-y divide-slate-100 text-sm">
+                            @foreach ($props as $f)
+                                <div class="grid grid-cols-2 gap-2 px-4 py-2.5 sm:grid-cols-5">
+                                    <dt class="text-slate-500 sm:col-span-2">{{ $f->name }}</dt>
+                                    <dd class="font-medium text-slate-900 sm:col-span-3">{{ $f->value }}</dd>
+                                </div>
+                            @endforeach
+                        </dl>
+                    </div>
+                @endif
+
+                @include('shop.partials.delivery-estimate', ['product' => $product])
+
                 @if ($hasVariantPicker)
-                    <div class="mb-6 space-y-4">
-                        @foreach ($variantGroups as $optName => $values)
+                    <div class="space-y-4">
+                        <template x-for="(values, optName) in groups" :key="optName">
                             <div>
                                 <p class="mb-2 text-sm font-semibold text-slate-700">
-                                    {{ $optName }}:
-                                    <span class="font-normal text-slate-500" x-text="selected['{{ $optName }}'] || ''"></span>
+                                    <span x-text="optName"></span>:
+                                    <span class="font-normal text-slate-500" x-text="selected[optName] || ''"></span>
                                 </p>
-                                @if ($isColorName($optName))
-                                    <div class="flex flex-wrap gap-2">
-                                        @foreach ($values as $val)
-                                            @php $hex = $resolveColor($val); @endphp
-                                            <button type="button"
-                                                    @click="select('{{ $optName }}', @js($val))"
-                                                    :class="selected['{{ $optName }}'] === @js($val) ? 'ring-2 ring-primary ring-offset-2 border-primary' : 'border-slate-200 hover:border-slate-300'"
-                                                    class="h-9 w-9 rounded-lg border-2 transition"
-                                                    title="{{ $val }}"
-                                                    @if ($hex) style="background: {{ $hex }};" @endif>
-                                                @if (! $hex)
-                                                    <span class="text-[10px] font-bold">{{ mb_substr($val, 0, 2) }}</span>
-                                                @endif
-                                            </button>
-                                        @endforeach
-                                    </div>
-                                @elseif ($isSizeName($optName))
-                                    <div class="flex flex-wrap gap-2">
-                                        @foreach ($values as $val)
-                                            <button type="button"
-                                                    @click="select('{{ $optName }}', @js($val))"
-                                                    :class="selected['{{ $optName }}'] === @js($val) ? 'border-primary bg-primary text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'"
-                                                    class="min-w-[2.5rem] rounded-lg border px-3 py-2 text-sm font-semibold transition">
-                                                {{ $val }}
-                                            </button>
-                                        @endforeach
-                                    </div>
-                                @else
-                                    <div class="flex flex-wrap gap-2">
-                                        @foreach ($values as $val)
-                                            <button type="button"
-                                                    @click="select('{{ $optName }}', @js($val))"
-                                                    :class="selected['{{ $optName }}'] === @js($val) ? 'border-primary bg-primary text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'"
-                                                    class="rounded-lg border px-3 py-2 text-sm font-medium transition">
-                                                {{ $val }}
-                                            </button>
-                                        @endforeach
-                                    </div>
-                                @endif
+                                <div class="flex flex-wrap gap-2">
+                                    <template x-for="val in values" :key="val">
+                                        <button type="button"
+                                                @click.prevent="select(optName, val)"
+                                                :class="selected[optName] === val
+                                                    ? 'border-primary bg-primary text-white ring-2 ring-primary ring-offset-1'
+                                                    : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'"
+                                                class="min-w-[2.5rem] cursor-pointer rounded-lg border px-3 py-2 text-sm font-semibold transition"
+                                                x-text="val">
+                                        </button>
+                                    </template>
+                                </div>
                             </div>
-                        @endforeach
+                        </template>
+                        <p x-show="matchedVariant && matchedVariant.name" class="text-xs text-slate-500">
+                            Выбрано: <span class="font-medium text-slate-700" x-text="matchedVariant?.name || ''"></span>
+                        </p>
                     </div>
                 @endif
 
@@ -228,19 +197,54 @@
                     <input type="hidden" name="options" :value="JSON.stringify(selected)">
                     <div class="flex flex-wrap items-center gap-3">
                         <input type="number" name="quantity" min="1" max="999" value="1" class="w-24 rounded-xl border border-slate-300 py-3 text-center text-lg font-semibold focus:border-primary focus:outline-none">
-                        <button type="submit" class="flex-1 rounded-xl bg-primary px-8 py-3.5 text-base font-bold text-white shadow-lg shadow-primary/25 hover:opacity-95 disabled:opacity-50 sm:flex-none" @if($stock !== null && $stock <= 0) disabled @endif>
-                            {{ $stock !== null && $stock <= 0 ? 'Нет в наличии' : 'Добавить в корзину' }}
+                        <button type="submit"
+                                class="flex-1 rounded-xl bg-primary px-8 py-3.5 text-base font-bold text-white shadow-lg shadow-primary/25 hover:opacity-95 disabled:opacity-50 sm:flex-none"
+                                :disabled="displayStock !== null && displayStock <= 0"
+                                x-text="(displayStock !== null && displayStock <= 0) ? 'Нет в наличии' : 'Добавить в корзину'">
+                            Добавить в корзину
                         </button>
                     </div>
                 </form>
             </div>
+
             <script>
-                function productVariants(defaults, groups) {
+                function productVariants(cfg) {
+                    cfg = cfg || {};
                     return {
-                        selected: { ...defaults },
-                        groups: groups || {},
+                        selected: Object.assign({}, cfg.defaults || {}),
+                        groups: cfg.groups || {},
+                        variants: cfg.variants || [],
+                        basePrice: cfg.basePrice,
+                        baseStock: cfg.baseStock,
                         select(name, value) {
-                            this.selected[name] = value;
+                            this.selected = Object.assign({}, this.selected, { [name]: value });
+                        },
+                        get matchedVariant() {
+                            const selected = this.selected || {};
+                            if (!this.variants.length) return null;
+                            return this.variants.find(function (v) {
+                                const opts = v.options || {};
+                                const optKeys = Object.keys(opts);
+                                if (!optKeys.length) {
+                                    return v.name && Object.values(selected).indexOf(v.name) !== -1;
+                                }
+                                return optKeys.every(function (k) {
+                                    return String(opts[k] ?? '') === String(selected[k] ?? '');
+                                });
+                            }) || null;
+                        },
+                        get displayPrice() {
+                            const m = this.matchedVariant;
+                            if (m && m.price != null) return m.price;
+                            return this.basePrice;
+                        },
+                        get displayStock() {
+                            const m = this.matchedVariant;
+                            if (m) return m.quantity;
+                            return this.baseStock;
+                        },
+                        formatPrice(n) {
+                            return Number(n).toLocaleString('ru-RU', { maximumFractionDigits: 0 });
                         },
                     };
                 }
