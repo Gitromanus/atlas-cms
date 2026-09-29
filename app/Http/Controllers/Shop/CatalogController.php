@@ -131,8 +131,11 @@ class CatalogController extends Controller
                     ->orderBy('price')
                     ->limit(1)
             ),
-            'name' => $query->orderBy('name'),
-            default => $query->latest(),
+            'name', 'name_asc' => $query->orderBy('name'),
+            'name_desc' => $query->orderByDesc('name'),
+            'popular' => $query->orderByDesc('id'),
+            'new', '' => $query->orderByDesc('id'),
+            default => $query->orderByDesc('id'),
         };
     }
 
