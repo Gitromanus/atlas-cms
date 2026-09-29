@@ -6,12 +6,6 @@ use App\Models\Tenant;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 
-/**
- * Хранилище файлов и состояния обмена для конкретного магазина.
- *
- * Все файлы CommerceML сохраняются в storage/app/1c/{tenant_slug}/,
- * состояние сессии — в JSON-файле state.json в той же папке.
- */
 class ExchangeStore
 {
     public function __construct(protected Tenant $tenant) {}
@@ -80,6 +74,29 @@ class ExchangeStore
         File::append($path, $contents);
     }
 
+    /**
+     * @param  resource  $stream
+     */
+    public function appendStream(string $filename, $stream): int
+    {
+        if (! is_resource($stream)) {
+            return 0;
+        }
+
+        $path = $this->safePath($filename);
+        File::ensureDirectoryExists(dirname($path));
+
+        $out = fopen($path, 'ab');
+        if ($out === false) {
+            return 0;
+        }
+
+        $bytes = stream_copy_to_stream($stream, $out);
+        fclose($out);
+
+        return (int) $bytes;
+    }
+
     public function filePath(string $filename): string
     {
         return $this->baseDir().'/'.basename(str_replace(chr(92), '/', $filename));
@@ -90,10 +107,6 @@ class ExchangeStore
         return $this->safePath($filename);
     }
 
-    /**
-     * Безопасный путь внутри каталога обмена (защита от path traversal).
-     * Сохраняет структуру import_files/xx/file.jpeg от 1С.
-     */
     public function safePath(string $filename): string
     {
         $relative = str_replace([chr(92), '..'], ['/', ''], $filename);
