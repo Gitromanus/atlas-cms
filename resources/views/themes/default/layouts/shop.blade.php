@@ -105,7 +105,7 @@
         </div>
     </div>
     @php($categoryMenu = \App\Models\Category::menuTree())
-    @if ($categoryMenu->isNotEmpty())
+    @if (! empty($categoryMenu))
         <div class="border-t border-slate-100 bg-slate-50/80">
             <nav class="mx-auto flex max-w-6xl flex-wrap items-center gap-1 px-4 py-2 text-sm md:gap-2">
                 @foreach ($categoryMenu as $category)
