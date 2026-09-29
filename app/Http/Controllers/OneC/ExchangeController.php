@@ -112,7 +112,6 @@ class ExchangeController extends Controller
     {
         $limit = (int) config('atlas.onec.file_limit', 52428800);
 
-        // zip=no — 1С шлёт файлы поштучно, меньше риск 500 на shared из-за большого zip
         return $this->plain("zip=no\nfile_limit={$limit}");
     }
 
@@ -190,7 +189,7 @@ class ExchangeController extends Controller
         }
 
         $tenant = app(TenantContext::class)->current();
-        $this->log($store, $type, 'import', $filename, 'processing', 'Файл поставлен в очередь на обработку');
+        $this->log($store, $type, 'import', $filename, 'processing', 'Обработка файла');
 
         if ($type === 'sale') {
             $count = (new OrderStatusImporter($store))->import($filename);
@@ -208,26 +207,20 @@ class ExchangeController extends Controller
             return response('success');
         }
 
+        // Shared-хостинг без queue worker: всегда синхронно, иначе offers не обработается
         $isOffers = str_contains(strtolower($filename), 'offers');
 
-        if (config('atlas.onec.sync_import', false)) {
-            try {
-                $job = $isOffers
-                    ? new ImportOffersJob($tenant->id, $filename)
-                    : new ImportCatalogJob($tenant->id, $filename);
+        try {
+            $job = $isOffers
+                ? new ImportOffersJob($tenant->id, $filename)
+                : new ImportCatalogJob($tenant->id, $filename);
 
-                $job->handle();
-            } catch (\Throwable $e) {
-                return response('failure');
-            }
+            $job->handle();
+        } catch (\Throwable $e) {
+            report($e);
+            $this->log($store, $type, 'import', $filename, 'failure', mb_substr($e->getMessage(), 0, 2000));
 
-            return response('success');
-        }
-
-        if ($isOffers) {
-            ImportOffersJob::dispatch($tenant->id, $filename);
-        } else {
-            ImportCatalogJob::dispatch($tenant->id, $filename);
+            return response('failure');
         }
 
         return response('success');
