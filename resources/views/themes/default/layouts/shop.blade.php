@@ -45,6 +45,11 @@
     $phoneHref = $phone ? preg_replace('/[^\d+]/', '', $phone) : null;
     $enableArticles = (bool) ($settings['enable_articles'] ?? true);
     $enableNews = (bool) ($settings['enable_news'] ?? true);
+    try {
+        $menuPages = \App\Models\Page::query()->published()->inMenu()->get(['title', 'slug']);
+    } catch (\Throwable $e) {
+        $menuPages = collect();
+    }
 @endphp
 
 <header class="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
@@ -67,6 +72,9 @@
             @if ($enableNews)
                 <a href="{{ route('news.index') }}" class="font-medium transition hover:text-primary">Новости</a>
             @endif
+            @foreach ($menuPages ?? [] as $menuPage)
+                <a href="{{ route('page.show', ['pageSlug' => $menuPage->slug]) }}" class="font-medium transition hover:text-primary">{{ $menuPage->title }}</a>
+            @endforeach
         </nav>
 
         <form action="{{ route('catalog.index') }}" method="GET" class="hidden max-w-xs flex-1 lg:block">
@@ -156,6 +164,9 @@
                 <li><a href="{{ route('order.track') }}" class="hover:text-primary">Статус заказа</a></li>
                 @if ($enableArticles)<li><a href="{{ route('articles.index') }}" class="hover:text-primary">Статьи</a></li>@endif
                 @if ($enableNews)<li><a href="{{ route('news.index') }}" class="hover:text-primary">Новости</a></li>@endif
+                @foreach ($menuPages ?? [] as $menuPage)
+                    <li><a href="{{ route('page.show', ['pageSlug' => $menuPage->slug]) }}" class="hover:text-primary">{{ $menuPage->title }}</a></li>
+                @endforeach
             </ul>
         </div>
     </div>
