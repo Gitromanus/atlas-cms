@@ -38,4 +38,9 @@ return [
         'test_station_id' => env('YANDEX_DELIVERY_TEST_STATION', 'fbed3aa1-2cc6-4370-ab4d-59c5cc9bb924'),
     ],
 
+    'dadata' => [
+        'token' => env('DADATA_TOKEN', ''),
+        'secret' => env('DADATA_SECRET', ''),
+    ],
+
 ];
