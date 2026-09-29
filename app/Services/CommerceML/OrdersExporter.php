@@ -5,9 +5,6 @@ namespace App\Services\CommerceML;
 use App\Models\Order;
 use Illuminate\Support\Str;
 
-/**
- * Формирует orders.xml для выгрузки заказов в 1С (type=sale, mode=query).
- */
 class OrdersExporter
 {
     public function __construct(protected ExchangeStore $store) {}
@@ -93,15 +90,20 @@ class OrdersExporter
         foreach ($order->items as $item) {
             $good = $doc->createElement('Товар');
             $productExtId = $item->product?->ext_id
-                ?: ($item->product_id ? 'product-'.$item->product_id : (string) Str::uuid());
+                ?: ($item->sku ?: null)
+                ?: ($item->product?->sku ?: null)
+                ?: ($item->product_id ? 'product-'.$item->product_id : 'item-'.$item->id);
             $good->appendChild($this->node($doc, 'Ид', (string) $productExtId));
-            if ($item->product?->sku) {
-                $good->appendChild($this->node($doc, 'Артикул', (string) $item->product->sku));
+            $sku = $item->sku ?: $item->product?->sku;
+            if ($sku) {
+                $good->appendChild($this->node($doc, 'Артикул', (string) $sku));
             }
-            $good->appendChild($this->node($doc, 'Наименование', (string) $item->product_name));
+            $good->appendChild($this->node($doc, 'Наименование', (string) ($item->product_name ?: 'Товар')));
+            $good->appendChild($this->node($doc, 'БазоваяЕдиница', (string) ($item->unit ?: $item->product?->unit ?: 'шт')));
             $good->appendChild($this->node($doc, 'ЦенаЗаЕдиницу', number_format((float) $item->price, 2, '.', '')));
             $good->appendChild($this->node($doc, 'Количество', (string) $item->quantity));
             $good->appendChild($this->node($doc, 'Сумма', number_format((float) $item->total, 2, '.', '')));
+            $good->appendChild($this->node($doc, 'Единица', (string) ($item->unit ?: $item->product?->unit ?: 'шт')));
             $goods->appendChild($good);
         }
 
