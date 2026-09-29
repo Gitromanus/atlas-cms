@@ -3,10 +3,10 @@
 namespace App\Filament\Shop\Widgets;
 
 use App\Models\Order;
-use App\Models\OrderStatus;
 use App\Models\Product;
 use Filament\Widgets\StatsOverviewWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
+use Illuminate\Support\Facades\Schema;
 
 class ShopStats extends StatsOverviewWidget
 {
@@ -14,27 +14,39 @@ class ShopStats extends StatsOverviewWidget
 
     protected function getStats(): array
     {
-        $ordersCount = Order::query()->count();
-        $revenue = (float) Order::query()->sum('total');
-        $productsCount = Product::query()->active()->count();
-        $newToday = Order::query()->whereDate('created_at', today())->count();
-
-        $newStatusIds = OrderStatus::query()
-            ->whereIn('name', ['Новый', 'В обработке'])
-            ->pluck('id');
-        $pending = Order::query()->whereIn('status_id', $newStatusIds)->count();
+        try {
+            $ordersCount = Schema::hasTable('orders') ? Order::query()->count() : 0;
+            $revenue = Schema::hasTable('orders') ? (float) Order::query()->sum('total') : 0;
+            $productsCount = 0;
+            if (Schema::hasTable('products')) {
+                $q = Product::query();
+                if (Schema::hasColumn('products', 'is_active')) {
+                    $q->where('is_active', true);
+                }
+                if (Schema::hasColumn('products', 'is_deleted_from_1c')) {
+                    $q->where('is_deleted_from_1c', false);
+                }
+                $productsCount = $q->count();
+            }
+            $newToday = Schema::hasTable('orders')
+                ? Order::query()->whereDate('created_at', today())->count()
+                : 0;
+        } catch (\Throwable $e) {
+            report($e);
+            $ordersCount = $revenue = $productsCount = $newToday = 0;
+        }
 
         return [
-            Stat::make('Заказов', $ordersCount)
-                ->description($pending > 0 ? "В работе: {$pending}" : 'Всего в магазине')
-                ->color($pending > 0 ? 'warning' : 'primary'),
-            Stat::make('Выручка', number_format($revenue, 0, ',', ' ').' ₽')
+            Stat::make('Заказов', (string) $ordersCount)
+                ->description('Всего в магазине')
+                ->color('primary'),
+            Stat::make('Выручка', number_format((float) $revenue, 0, ',', ' ').' ₽')
                 ->description('Сумма всех заказов')
                 ->color('success'),
-            Stat::make('Товаров', $productsCount)
-                ->description('Активных на витрине')
+            Stat::make('Товаров', (string) $productsCount)
+                ->description('На витрине')
                 ->color('info'),
-            Stat::make('Сегодня', $newToday)
+            Stat::make('Сегодня', (string) $newToday)
                 ->description(now()->format('d.m.Y'))
                 ->color('warning'),
         ];
