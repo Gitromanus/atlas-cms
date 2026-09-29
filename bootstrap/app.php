@@ -25,7 +25,6 @@ return Application::configure(basePath: dirname(__DIR__))
             'tenant' => EnsureTenant::class,
         ]);
 
-        // Гости личного кабинета покупателя → логин витрины (не route('login'), его нет)
         $middleware->redirectGuestsTo(function (\Illuminate\Http\Request $request) {
             $shop = $request->route('shop');
             if (! $shop) {
@@ -50,5 +49,17 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        //
+        $exceptions->render(function (\Throwable $e, \Illuminate\Http\Request $request) {
+            $path = $request->path();
+            if (str_contains($path, '1c/exchange') || str_starts_with($path, '1c/')) {
+                report($e);
+
+                return response("failure\n".$e->getMessage(), 200, [
+                    'Content-Type' => 'text/plain; charset=UTF-8',
+                    'Cache-Control' => 'no-store',
+                ]);
+            }
+
+            return null;
+        });
     })->create();
