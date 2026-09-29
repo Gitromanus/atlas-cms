@@ -140,7 +140,10 @@ class CatalogController extends Controller
         return $out;
     }
 
-    /** @param mixed $productIds @return array<string, array{is_variant: bool, values: list<string>}> */
+    /**
+     * @param  mixed  $productIds
+     * @return array<string, array{is_variant: bool, type: string, values: list<array{value: string, count: int}>}>
+     */
     protected function featureFilters($productIds): array
     {
         $productIds = collect($productIds)->filter()->values();
@@ -168,7 +171,7 @@ class CatalogController extends Controller
             }
 
             $filters[$name]['is_variant'] = false;
-            $filters[$name]['values'][$value] = true;
+            $filters[$name]['items'][$feature->product_id][$value] = true;
         }
 
         $variants = ProductVariant::query()
@@ -183,22 +186,52 @@ class CatalogController extends Controller
                 }
 
                 $filters[(string) $name]['is_variant'] = true;
-                $filters[(string) $name]['values'][(string) $value] = true;
+                $filters[(string) $name]['items'][$variant->product_id][(string) $value] = true;
             }
         }
 
         $result = [];
 
         foreach ($filters as $name => $data) {
-            $values = array_keys($data['values']);
+            $counts = [];
+            foreach ($data['items'] ?? [] as $productValues) {
+                foreach (array_keys($productValues) as $value) {
+                    $counts[$value] = ($counts[$value] ?? 0) + 1;
+                }
+            }
+
+            $values = array_keys($counts);
             usort($values, static fn (string $a, string $b): int => mb_strtolower($a) <=> mb_strtolower($b));
 
             $result[$name] = [
-                'is_variant' => (bool) $data['is_variant'],
-                'values' => $values,
+                'is_variant' => (bool) ($data['is_variant'] ?? false),
+                'type' => $this->detectFilterType($name),
+                'values' => array_map(
+                    fn (string $v) => ['value' => $v, 'count' => $counts[$v]],
+                    $values
+                ),
             ];
         }
 
         return $result;
+    }
+
+    protected function detectFilterType(string $name): string
+    {
+        $n = mb_strtolower(trim($name));
+
+        if (str_contains($n, 'цвет') || str_contains($n, 'color') || str_contains($n, 'colour')) {
+            return 'color';
+        }
+
+        if (str_contains($n, 'размер') || str_contains($n, 'size') || $n === 'р-р') {
+            return 'size';
+        }
+
+        if (str_contains($n, 'бренд') || str_contains($n, 'brand') || str_contains($n, 'производител') || str_contains($n, 'марка')) {
+            return 'brand';
+        }
+
+        return 'default';
     }
 }
