@@ -8,6 +8,8 @@ use App\Models\Product;
 use App\Models\ProductFeature;
 use App\Models\ProductPrice;
 use App\Models\ProductVariant;
+use App\Services\Demo\DemoCatalogSeeder;
+use App\Services\Tenant\TenantContext;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -27,6 +29,11 @@ class CatalogController extends Controller
 
     protected function render(Request $request, ?Category $category): View
     {
+        $tenant = app(TenantContext::class)->current();
+        if ($tenant) {
+            app(DemoCatalogSeeder::class)->ensure($tenant);
+        }
+
         $menuTree = Category::menuTree();
         $categories = collect($menuTree);
 
@@ -70,7 +77,8 @@ class CatalogController extends Controller
 
                 foreach ($values as $value) {
                     if ($isVariant) {
-                        $q->orWhereHas('variants', fn ($vq) => $vq->where('options->'.$name, $value));
+                        $q->orWhereHas('variants', fn ($vq) => $vq->where('options->'.$name, $value))
+                            ->orWhereHas('features', fn ($fq) => $fq->where('name', $name)->where('value', $value));
                     } else {
                         $q->orWhereHas('features', fn ($fq) => $fq->where('name', $name)->where('value', $value));
                     }
@@ -159,10 +167,6 @@ class CatalogController extends Controller
             ->get();
 
         foreach ($features as $feature) {
-            if ($feature->is_variant) {
-                continue;
-            }
-
             $name = (string) $feature->name;
             $value = (string) $feature->value;
 
@@ -170,7 +174,8 @@ class CatalogController extends Controller
                 continue;
             }
 
-            $filters[$name]['is_variant'] = false;
+            $isVariant = (bool) $feature->is_variant || Product::isVariantAttributeName($name);
+            $filters[$name]['is_variant'] = $isVariant || ($filters[$name]['is_variant'] ?? false);
             $filters[$name]['items'][$feature->product_id][$value] = true;
         }
 

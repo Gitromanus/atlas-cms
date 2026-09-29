@@ -87,9 +87,40 @@ class Product extends Model
             ->orderBy('id');
     }
 
+    public static function isVariantAttributeName(string $name): bool
+    {
+        $n = mb_strtolower(trim($name));
+
+        if ($n === '') {
+            return false;
+        }
+
+        return str_contains($n, 'цвет')
+            || str_contains($n, 'color')
+            || str_contains($n, 'colour')
+            || str_contains($n, 'размер')
+            || str_contains($n, 'size')
+            || $n === 'р-р'
+            || $n === 'rr';
+    }
+
+    public function isVariantFeature(ProductFeature $feature): bool
+    {
+        return (bool) $feature->is_variant || self::isVariantAttributeName((string) $feature->name);
+    }
+
     public function variantFeatures(): \Illuminate\Support\Collection
     {
-        return $this->features->where('is_variant', true)->values();
+        return $this->features
+            ->filter(fn (ProductFeature $f) => $this->isVariantFeature($f))
+            ->values();
+    }
+
+    public function propertyFeatures(): \Illuminate\Support\Collection
+    {
+        return $this->features
+            ->filter(fn (ProductFeature $f) => ! $this->isVariantFeature($f))
+            ->values();
     }
 
     public function variants(): HasMany
@@ -99,14 +130,14 @@ class Product extends Model
 
     public function hasVariants(): bool
     {
-        return $this->variants()->exists()
-            || $this->features()->where('is_variant', true)->exists();
+        if ($this->variants()->exists()) {
+            return true;
+        }
+
+        return $this->features->contains(fn (ProductFeature $f) => $this->isVariantFeature($f));
     }
 
     /**
-     * Остаток по выбранной комбинации характеристик.
-     * null — такой комбинации нет (или варианты обязательны, а выбор пуст).
-     *
      * @param  array<string, string>  $options
      */
     public function variantQuantity(array $options): ?float
@@ -140,12 +171,10 @@ class Product extends Model
                 continue;
             }
 
-            // Точное совпадение набора ключей (все характеристики выбраны)
             if (count($vo) === count($filtered)) {
                 return (float) $variant->quantity;
             }
 
-            // Частичный выбор: подходит, если все выбранные совпали
             return (float) $variant->quantity;
         }
 
