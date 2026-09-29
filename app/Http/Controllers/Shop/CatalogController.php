@@ -10,7 +10,9 @@ use App\Models\ProductPrice;
 use App\Models\ProductVariant;
 use App\Services\Demo\DemoCatalogSeeder;
 use App\Services\Tenant\TenantContext;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 
 class CatalogController extends Controller
@@ -29,9 +31,15 @@ class CatalogController extends Controller
 
     protected function render(Request $request, ?Category $category): View
     {
+        @ini_set('memory_limit', '256M');
+
         $tenant = app(TenantContext::class)->current();
         if ($tenant) {
-            app(DemoCatalogSeeder::class)->ensure($tenant);
+            try {
+                app(DemoCatalogSeeder::class)->ensure($tenant);
+            } catch (\Throwable $e) {
+                Log::warning('DemoCatalogSeeder: '.$e->getMessage());
+            }
         }
 
         $menuTree = Category::menuTree();
@@ -67,7 +75,12 @@ class CatalogController extends Controller
                 });
             });
 
-        $filterOptions = $this->featureFilters((clone $query)->pluck('id'));
+        try {
+            $filterOptions = $this->featureFilters(clone $query);
+        } catch (\Throwable $e) {
+            Log::warning('catalog filters failed: '.$e->getMessage());
+            $filterOptions = [];
+        }
 
         $selectedFilters = $this->normalizeFilters($request->input('f', []));
 
@@ -149,76 +162,94 @@ class CatalogController extends Controller
     }
 
     /**
-     * @param  mixed  $productIds
      * @return array<string, array{is_variant: bool, type: string, values: list<array{value: string, count: int}>}>
      */
-    protected function featureFilters($productIds): array
+    protected function featureFilters(Builder $productQuery): array
     {
-        $productIds = collect($productIds)->filter()->values();
+        $sub = (clone $productQuery)->select('products.id')->reorder();
 
-        if ($productIds->isEmpty()) {
-            return [];
-        }
+        $rows = ProductFeature::query()
+            ->whereIn('product_id', $sub)
+            ->selectRaw('name, value, MAX(CAST(is_variant AS UNSIGNED)) as is_variant, COUNT(DISTINCT product_id) as cnt')
+            ->groupBy('name', 'value')
+            ->orderBy('name')
+            ->orderBy('value')
+            ->limit(1500)
+            ->get();
 
         $filters = [];
 
-        $features = ProductFeature::query()
-            ->whereIn('product_id', $productIds)
-            ->get();
-
-        foreach ($features as $feature) {
-            $name = (string) $feature->name;
-            $value = (string) $feature->value;
-
-            if ($value === '') {
+        foreach ($rows as $row) {
+            $name = (string) $row->name;
+            $value = (string) $row->value;
+            if ($name === '' || $value === '') {
                 continue;
             }
 
-            $isVariant = (bool) $feature->is_variant || Product::isVariantAttributeName($name);
-            $filters[$name]['is_variant'] = $isVariant || ($filters[$name]['is_variant'] ?? false);
-            $filters[$name]['items'][$feature->product_id][$value] = true;
+            $isVariant = (bool) $row->is_variant || Product::isVariantAttributeName($name);
+
+            if (! isset($filters[$name])) {
+                $filters[$name] = [
+                    'is_variant' => $isVariant,
+                    'type' => $this->detectFilterType($name),
+                    'values' => [],
+                ];
+            } else {
+                $filters[$name]['is_variant'] = $filters[$name]['is_variant'] || $isVariant;
+            }
+
+            $filters[$name]['values'][] = [
+                'value' => $value,
+                'count' => (int) $row->cnt,
+            ];
         }
 
-        $variants = ProductVariant::query()
-            ->whereIn('product_id', $productIds)
+        $variantRows = ProductVariant::query()
+            ->whereIn('product_id', $sub)
             ->whereNotNull('options')
-            ->get();
+            ->limit(2000)
+            ->get(['product_id', 'options']);
 
-        foreach ($variants as $variant) {
+        $variantCounts = [];
+        foreach ($variantRows as $variant) {
             foreach ((array) $variant->options as $name => $value) {
                 if (! filled($value)) {
                     continue;
                 }
-
-                $filters[(string) $name]['is_variant'] = true;
-                $filters[(string) $name]['items'][$variant->product_id][(string) $value] = true;
+                $variantCounts[(string) $name][(string) $value][$variant->product_id] = true;
             }
         }
 
-        $result = [];
+        foreach ($variantCounts as $name => $values) {
+            if (! isset($filters[$name])) {
+                $filters[$name] = [
+                    'is_variant' => true,
+                    'type' => $this->detectFilterType($name),
+                    'values' => [],
+                ];
+            } else {
+                $filters[$name]['is_variant'] = true;
+            }
 
-        foreach ($filters as $name => $data) {
-            $counts = [];
-            foreach ($data['items'] ?? [] as $productValues) {
-                foreach (array_keys($productValues) as $value) {
-                    $counts[$value] = ($counts[$value] ?? 0) + 1;
+            $existing = [];
+            foreach ($filters[$name]['values'] as $i => $v) {
+                $existing[$v['value']] = $i;
+            }
+
+            foreach ($values as $value => $productIds) {
+                $cnt = count($productIds);
+                if (isset($existing[$value])) {
+                    $filters[$name]['values'][$existing[$value]]['count'] = max(
+                        $filters[$name]['values'][$existing[$value]]['count'],
+                        $cnt
+                    );
+                } else {
+                    $filters[$name]['values'][] = ['value' => $value, 'count' => $cnt];
                 }
             }
-
-            $values = array_keys($counts);
-            usort($values, static fn (string $a, string $b): int => mb_strtolower($a) <=> mb_strtolower($b));
-
-            $result[$name] = [
-                'is_variant' => (bool) ($data['is_variant'] ?? false),
-                'type' => $this->detectFilterType($name),
-                'values' => array_map(
-                    fn (string $v) => ['value' => $v, 'count' => $counts[$v]],
-                    $values
-                ),
-            ];
         }
 
-        return $result;
+        return $filters;
     }
 
     protected function detectFilterType(string $name): string
