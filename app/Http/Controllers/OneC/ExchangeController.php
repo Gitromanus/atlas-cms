@@ -37,6 +37,10 @@ class ExchangeController extends Controller
         $type = (string) $request->query('type', 'catalog');
         $mode = (string) $request->query('mode');
 
+        @ini_set('memory_limit', '512M');
+        @ini_set('max_execution_time', '600');
+        @set_time_limit(600);
+
         try {
             if ($mode === 'checkauth') {
                 return $this->checkauth($request, $tenant);
@@ -44,9 +48,6 @@ class ExchangeController extends Controller
 
             $store = new ExchangeStore($tenant);
 
-            // Доступ разрешён при валидных учётных данных ИЛИ валидной сессии.
-            // 1С может присылать закешированный session_id или не слать Basic-заголовок
-            // на каждый запрос — оба случая обрабатываем.
             $authorized = $this->authorize($request, $tenant);
             $sessionValid = $store->hasValidSession((string) $request->query('session_id'), $type);
 
@@ -72,16 +73,18 @@ class ExchangeController extends Controller
                 default => response('failure'),
             };
         } catch (\Throwable $e) {
-            $this->log($tenant, $type, $mode, $request->query('filename'), 'failure', $e->getMessage());
+            try {
+                $this->log($tenant, $type, $mode, $request->query('filename'), 'failure', mb_substr($e->getMessage(), 0, 2000));
+            } catch (\Throwable) {
+            }
             report($e);
 
-            return response('failure');
+            return response("failure\n".$e->getMessage(), 200, [
+                'Content-Type' => 'text/plain; charset=UTF-8',
+            ]);
         }
     }
 
-    /**
-     * Проверка учётных данных владельца магазина (Basic Auth).
-     */
     protected function authorize(Request $request, Tenant $tenant): bool
     {
         $login = $request->getUser();
@@ -95,9 +98,6 @@ class ExchangeController extends Controller
             && Hash::check((string) $password, (string) $owner->password);
     }
 
-    /**
-     * mode=checkauth — проверка авторизации и старт сессии обмена.
-     */
     protected function checkauth(Request $request, Tenant $tenant): Response
     {
         if (! $this->authorize($request, $tenant)) {
@@ -110,7 +110,6 @@ class ExchangeController extends Controller
         $store = new ExchangeStore($tenant);
         $sessionId = $store->startSession($type);
 
-        // Новый прогон обмена: файлы будут приниматься «с чистого листа»
         $store->set('received_files', []);
 
         $this->log($tenant, $type, 'checkauth', null, 'success', 'Авторизация успешна');
@@ -118,35 +117,28 @@ class ExchangeController extends Controller
         return response("success\n{$sessionId}");
     }
 
-    /**
-     * mode=init — параметры сессии.
-     */
     protected function init(ExchangeStore $store): Response
     {
-        $limit = config('atlas.onec.file_limit');
+        $limit = (int) config('atlas.onec.file_limit', 52428800);
 
-        return response("zip=no\nfile_limit={$limit}");
+        return $this->plain("zip=yes\nfile_limit={$limit}");
     }
 
-    /**
-     * mode=file — приём файла от 1С (частями).
-     */
     protected function file(Request $request, ExchangeStore $store, string $type): Response
     {
         $filename = (string) $request->query('filename');
+        $filename = str_replace(chr(92), '/', $filename);
 
         if ($filename === '') {
-            return response('failure');
+            return $this->plain("failure\nempty filename");
         }
 
         $contents = $request->getContent();
 
-        if ($contents === '') {
-            return response('failure');
+        if ($contents === '' || $contents === false) {
+            return $this->plain("failure\nempty body");
         }
 
-        // Первый фрагмент файла в этом прогоне: отбрасываем остаток от прошлого прогона,
-        // чтобы файл не превращался в склейку нескольких XML-документов.
         $received = (array) $store->get('received_files', []);
 
         if (! in_array($filename, $received, true)) {
@@ -155,21 +147,46 @@ class ExchangeController extends Controller
             }
 
             $received[] = $filename;
-            $store->set('received_files', $received);
+
+            if ($this->shouldLogFile($filename)) {
+                $store->set('received_files', $received);
+            } else {
+                $store->set('received_files', array_slice($received, -50));
+            }
         }
 
         $store->appendToFile($filename, $contents);
-        $this->log($store, $type, 'file', $filename, 'success', 'Файл получен');
 
-        return response('success');
+        if ($this->shouldLogFile($filename)) {
+            $this->log($store, $type, 'file', $filename, 'success', 'Файл получен ('.strlen($contents).' байт)');
+        }
+
+        return $this->plain('success');
     }
 
-    /**
-     * mode=import — обработка принятого файла.
-     */
+    protected function shouldLogFile(string $filename): bool
+    {
+        $base = strtolower(basename(str_replace(chr(92), '/', $filename)));
+
+        return str_ends_with($base, '.xml')
+            || str_ends_with($base, '.zip')
+            || str_contains($base, 'import')
+            || str_contains($base, 'offers')
+            || str_contains($base, 'orders');
+    }
+
+    protected function plain(string $body, int $status = 200): Response
+    {
+        return response($body, $status, [
+            'Content-Type' => 'text/plain; charset=UTF-8',
+            'Cache-Control' => 'no-store',
+        ]);
+    }
+
     protected function import(Request $request, ExchangeStore $store, string $type): Response
     {
         $filename = (string) $request->query('filename');
+        $filename = str_replace(chr(92), '/', $filename);
 
         if ($filename === '' || ! $store->hasFile($filename)) {
             return response('failure');
@@ -179,7 +196,6 @@ class ExchangeController extends Controller
         $this->log($store, $type, 'import', $filename, 'processing', 'Файл поставлен в очередь на обработку');
 
         if ($type === 'sale') {
-            // Статусы заказов от 1С
             $count = (new OrderStatusImporter($store))->import($filename);
             $this->log($store, $type, 'import', $filename, 'success', "Обновлено заказов: {$count}");
             $store->deleteFile($filename);
@@ -187,7 +203,6 @@ class ExchangeController extends Controller
             return response('success');
         }
 
-        // Архив с картинками (1С может выгружать их общим zip вместо поштучно)
         if (str_ends_with(strtolower($filename), '.zip')) {
             $count = $store->extractZip($filename);
             $this->log($store, $type, 'import', $filename, 'success', "Распаковано файлов: {$count}");
@@ -196,7 +211,6 @@ class ExchangeController extends Controller
             return response('success');
         }
 
-        // Каталог: обработка синхронно (не требует cron/воркера) или через очередь
         $isOffers = str_contains(strtolower($filename), 'offers');
 
         if (config('atlas.onec.sync_import', false)) {
@@ -222,9 +236,6 @@ class ExchangeController extends Controller
         return response('success');
     }
 
-    /**
-     * type=sale&mode=query — 1С запрашивает заказы.
-     */
     protected function queryOrders(ExchangeStore $store): Response
     {
         $xml = (new OrdersExporter($store))->export();
@@ -234,9 +245,6 @@ class ExchangeController extends Controller
         ]);
     }
 
-    /**
-     * type=sale&mode=success — 1С подтвердила получение заказов.
-     */
     protected function saleSuccess(ExchangeStore $store): Response
     {
         $ids = $store->get('pending_order_ids', []);
@@ -260,9 +268,6 @@ class ExchangeController extends Controller
         return response('success');
     }
 
-    // guardSession больше не требуется: доступ проверяется в handle()
-    // по учётным данным ИЛИ сессии.
-
     protected function log(ExchangeStore|Tenant $context, string $type, string $mode, ?string $filename, string $status, string $message): void
     {
         $tenantId = $context instanceof ExchangeStore ? $context->getTenantId() : $context->id;
@@ -271,7 +276,7 @@ class ExchangeController extends Controller
             'tenant_id' => $tenantId,
             'type' => $type,
             'mode' => $mode,
-            'filename' => $filename,
+            'filename' => $filename !== null ? mb_substr((string) $filename, 0, 240) : null,
             'status' => $status,
             'message' => $message,
         ]);
