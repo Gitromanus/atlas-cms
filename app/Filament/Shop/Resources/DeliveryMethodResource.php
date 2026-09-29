@@ -11,6 +11,7 @@ class DeliveryMethodResource extends Resource {
     protected static ?string $modelLabel = 'способ доставки';
     protected static ?string $pluralModelLabel = 'способы доставки';
     protected static ?int $navigationSort = 25;
+    public static function shouldRegisterNavigation(): bool { return false; }
     public static function form(Form $form): Form {
         return $form->schema([
             Forms\Components\Hidden::make('tenant_id')->default(fn()=>app(TenantContext::class)->id()),
