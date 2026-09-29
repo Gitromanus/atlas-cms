@@ -186,7 +186,7 @@ class CatalogController extends Controller
                 continue;
             }
 
-            $isVariant = (bool) $row->is_variant || Product::isVariantAttributeName($name);
+            $isVariant = (bool) $row->is_variant;
 
             if (! isset($filters[$name])) {
                 $filters[$name] = [
