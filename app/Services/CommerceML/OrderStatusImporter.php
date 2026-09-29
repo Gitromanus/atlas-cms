@@ -5,12 +5,11 @@ namespace App\Services\CommerceML;
 use App\Models\Order;
 use App\Models\OrderStatus;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use SimpleXMLElement;
 
 /**
- * Импорт статусов заказов из orders.xml, присланного 1С (type=sale, mode=import).
- *
- * 1С передаёт заказы в виде документов с реквизитом «СтатусЗаказа».
+ * Импорт статусов заказов из orders.xml (type=sale, mode=import).
  */
 class OrderStatusImporter
 {
@@ -18,10 +17,10 @@ class OrderStatusImporter
 
     public function import(string $filename): int
     {
-        $path = $this->store->filePath($filename);
+        $path = $this->resolvePath($filename);
 
-        if (! $this->store->hasFile($filename)) {
-            throw new \RuntimeException("Файл {$filename} не найден");
+        if ($path === null) {
+            throw new \RuntimeException("Файл {$filename} не найден в каталоге обмена");
         }
 
         $updated = 0;
@@ -37,45 +36,119 @@ class OrderStatusImporter
         return $updated;
     }
 
-    protected function applyStatus(SimpleXMLElement $document): bool
+    protected function resolvePath(string $filename): ?string
     {
-        $extId = XmlUtils::child($document, 'Ид');
-
-        if ($extId === null) {
-            return false;
-        }
-
-        $statusValue = null;
-
-        if (isset($document->ЗначенияРеквизитов->ЗначениеРеквизита)) {
-            foreach ($document->ЗначенияРеквизитов->ЗначениеРеквизита as $requisite) {
-                if (XmlUtils::child($requisite, 'Наименование') === 'СтатусЗаказа') {
-                    $statusValue = XmlUtils::child($requisite, 'Значение');
-                    break;
-                }
+        foreach ([$this->store->dirPath($filename), $this->store->filePath($filename)] as $path) {
+            if (is_file($path)) {
+                return $path;
             }
         }
 
-        if ($statusValue === null) {
+        return null;
+    }
+
+    protected function applyStatus(SimpleXMLElement $document): bool
+    {
+        $extId = XmlUtils::child($document, 'Ид');
+        $number = XmlUtils::child($document, 'Номер');
+        $statusValue = $this->extractStatus($document);
+
+        $order = $this->findOrder($extId, $number);
+
+        if ($order === null) {
+            Log::info('1C order status: заказ не найден', [
+                'ext_id' => $extId,
+                'number' => $number,
+            ]);
+
             return false;
         }
 
-        $order = Order::query()->where('ext_id', $extId)->first();
+        if (filled($extId) && blank($order->ext_id)) {
+            $order->ext_id = $extId;
+        }
 
-        if ($order === null) {
+        if ($statusValue === null) {
+            $order->save();
+
             return false;
         }
 
         $status = OrderStatus::query()
-            ->where(fn ($q) => $q->where('ext_code', $statusValue)->orWhere('code', strtolower($statusValue)))
+            ->where(function ($q) use ($statusValue) {
+                $q->where('ext_code', $statusValue)
+                    ->orWhere('code', strtolower($statusValue))
+                    ->orWhere('name', $statusValue);
+            })
             ->first();
 
-        if ($status !== null) {
-            $order->update(['status_id' => $status->id]);
+        if ($status === null) {
+            $code = $this->makeCode($statusValue);
 
-            return true;
+            $status = OrderStatus::query()->firstOrCreate(
+                [
+                    'tenant_id' => $order->tenant_id,
+                    'code' => $code,
+                ],
+                [
+                    'name' => $statusValue,
+                    'ext_code' => $statusValue,
+                    'is_system' => false,
+                ]
+            );
         }
 
-        return false;
+        $order->status_id = $status->id;
+        $order->save();
+
+        return true;
+    }
+
+    protected function extractStatus(SimpleXMLElement $document): ?string
+    {
+        if (! isset($document->ЗначенияРеквизитов->ЗначениеРеквизита)) {
+            return null;
+        }
+
+        foreach ($document->ЗначенияРеквизитов->ЗначениеРеквизита as $requisite) {
+            $name = XmlUtils::child($requisite, 'Наименование');
+
+            if (in_array($name, ['СтатусЗаказа', 'Статус заказа', 'Статус'], true)) {
+                return XmlUtils::child($requisite, 'Значение');
+            }
+        }
+
+        return null;
+    }
+
+    protected function findOrder(?string $extId, ?string $number): ?Order
+    {
+        if (filled($extId)) {
+            $byExt = Order::query()->where('ext_id', $extId)->first();
+            if ($byExt !== null) {
+                return $byExt;
+            }
+
+            if (ctype_digit($extId)) {
+                $byId = Order::query()->find((int) $extId);
+                if ($byId !== null) {
+                    return $byId;
+                }
+            }
+        }
+
+        if (filled($number)) {
+            return Order::query()->where('number', $number)->first();
+        }
+
+        return null;
+    }
+
+    protected function makeCode(string $value): string
+    {
+        $s = mb_strtolower(trim($value));
+        $s = preg_replace('/[^\p{L}\p{N}]+/u', '_', $s) ?: 'status';
+
+        return mb_substr($s, 0, 64);
     }
 }

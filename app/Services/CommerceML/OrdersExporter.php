@@ -16,12 +16,18 @@ class OrdersExporter
     {
         $orders = Order::query()
             ->where('exported_to_1c', false)
-            ->with('items')
+            ->with(['items.product'])
             ->orderBy('id')
             ->limit($limit)
             ->get();
 
-        // Сохраняем список выданных заказов — отметим их после подтверждения 1С (mode=success)
+        foreach ($orders as $order) {
+            if (blank($order->ext_id)) {
+                $order->ext_id = (string) Str::uuid();
+                $order->save();
+            }
+        }
+
         $this->store->set('pending_order_ids', $orders->pluck('id')->all());
 
         $doc = new \DOMDocument('1.0', 'UTF-8');
@@ -36,27 +42,30 @@ class OrdersExporter
             $root->appendChild($this->document($doc, $order));
         }
 
-        return $doc->saveXML();
+        return $doc->saveXML() ?: '<?xml version="1.0" encoding="UTF-8"?><КоммерческаяИнформация/>';
     }
 
     protected function document(\DOMDocument $doc, Order $order): \DOMElement
     {
         $document = $doc->createElement('Документ');
 
-        $document->appendChild($this->node($doc, 'Ид', $order->ext_id));
-        $document->appendChild($this->node($doc, 'Номер', $order->number));
-        $document->appendChild($this->node($doc, 'Дата', $order->placed_at?->format('Y-m-d')));
+        $document->appendChild($this->node($doc, 'Ид', (string) $order->ext_id));
+        $document->appendChild($this->node($doc, 'Номер', (string) $order->number));
+        $document->appendChild($this->node($doc, 'Дата', $order->placed_at?->format('Y-m-d') ?: now()->format('Y-m-d')));
         $document->appendChild($this->node($doc, 'ХозОперация', 'Заказ товара'));
         $document->appendChild($this->node($doc, 'Роль', 'Продавец'));
         $document->appendChild($this->node($doc, 'Валюта', 'руб'));
         $document->appendChild($this->node($doc, 'Курс', '1'));
         $document->appendChild($this->node($doc, 'Сумма', number_format((float) $order->total, 2, '.', '')));
 
-        // Контрагент
         $counteragents = $doc->createElement('Контрагенты');
         $counteragent = $doc->createElement('Контрагент');
-        $counteragent->appendChild($this->node($doc, 'Ид', $order->customer_id ? (string) $order->customer_id : (string) $order->ext_id));
-        $counteragent->appendChild($this->node($doc, 'Наименование', $order->customer_name));
+        $counteragent->appendChild($this->node(
+            $doc,
+            'Ид',
+            $order->customer_id ? 'customer-'.$order->customer_id : 'guest-'.$order->id
+        ));
+        $counteragent->appendChild($this->node($doc, 'Наименование', $order->customer_name ?: 'Покупатель'));
         $counteragent->appendChild($this->node($doc, 'Роль', 'Покупатель'));
 
         if ($order->customer_phone) {
@@ -79,13 +88,17 @@ class OrdersExporter
         $counteragents->appendChild($counteragent);
         $document->appendChild($counteragents);
 
-        // Товары
         $goods = $doc->createElement('Товары');
 
         foreach ($order->items as $item) {
             $good = $doc->createElement('Товар');
-            $good->appendChild($this->node($doc, 'Ид', $item->product_id ? (string) $item->product_id : Str::uuid()));
-            $good->appendChild($this->node($doc, 'Наименование', $item->product_name));
+            $productExtId = $item->product?->ext_id
+                ?: ($item->product_id ? 'product-'.$item->product_id : (string) Str::uuid());
+            $good->appendChild($this->node($doc, 'Ид', (string) $productExtId));
+            if ($item->product?->sku) {
+                $good->appendChild($this->node($doc, 'Артикул', (string) $item->product->sku));
+            }
+            $good->appendChild($this->node($doc, 'Наименование', (string) $item->product_name));
             $good->appendChild($this->node($doc, 'ЦенаЗаЕдиницу', number_format((float) $item->price, 2, '.', '')));
             $good->appendChild($this->node($doc, 'Количество', (string) $item->quantity));
             $good->appendChild($this->node($doc, 'Сумма', number_format((float) $item->total, 2, '.', '')));
@@ -94,15 +107,13 @@ class OrdersExporter
 
         $document->appendChild($goods);
 
-        // Реквизиты
         $requisites = $doc->createElement('ЗначенияРеквизитов');
-
-        $requisites->appendChild($this->requisite($doc, 'Метод оплаты', $order->payment_method));
-        $requisites->appendChild($this->requisite($doc, 'Способ доставки', $order->delivery_method));
-        $requisites->appendChild($this->requisite($doc, 'Адрес доставки', $order->delivery_address));
+        $requisites->appendChild($this->requisite($doc, 'Метод оплаты', (string) ($order->payment_method ?: '')));
+        $requisites->appendChild($this->requisite($doc, 'Способ доставки', (string) ($order->delivery_method ?: '')));
+        $requisites->appendChild($this->requisite($doc, 'Адрес доставки', (string) ($order->delivery_address ?: '')));
 
         if ($order->comment) {
-            $requisites->appendChild($this->requisite($doc, 'Комментарий', $order->comment));
+            $requisites->appendChild($this->requisite($doc, 'Комментарий', (string) $order->comment));
         }
 
         $document->appendChild($requisites);
@@ -121,12 +132,12 @@ class OrdersExporter
         return $node;
     }
 
-    protected function requisite(\DOMDocument $doc, string $name, ?string $value): \DOMElement
+    protected function requisite(\DOMDocument $doc, string $name, string $value): \DOMElement
     {
-        $requisite = $doc->createElement('ЗначениеРеквизита');
-        $requisite->appendChild($this->node($doc, 'Наименование', $name));
-        $requisite->appendChild($this->node($doc, 'Значение', $value));
+        $req = $doc->createElement('ЗначениеРеквизита');
+        $req->appendChild($this->node($doc, 'Наименование', $name));
+        $req->appendChild($this->node($doc, 'Значение', $value));
 
-        return $requisite;
+        return $req;
     }
 }
