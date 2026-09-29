@@ -33,116 +33,204 @@ class ProductResource extends Resource
     {
         return $form
             ->schema([
-                Forms\Components\Grid::make(['default' => 1, 'md' => 3])
+                Forms\Components\Section::make('Основное')
                     ->schema([
-                        Forms\Components\Section::make('Изображения')
-                            ->description('Первое по порядку — основное (крупно на сайте). Стрелки = порядок, крестик = удалить.')
-                            ->schema([
-                                Forms\Components\Repeater::make('images')
-                                    ->relationship()
-                                    ->label('Текущие фото')
-                                    ->schema([
-                                        Forms\Components\Placeholder::make('preview')
-                                            ->label('Превью')
-                                            ->content(function (Get $get): HtmlString {
-                                                $url = $get('url');
-                                                $path = $get('path');
-                                                if (filled($path) && ! filled($url)) {
-                                                    $relative = str_starts_with((string) $path, 'products/')
-                                                        ? $path
-                                                        : 'products/'.$path;
-                                                    $url = asset('storage/'.$relative);
-                                                }
-                                                if (! filled($url)) {
-                                                    return new HtmlString('<span class="text-sm text-gray-400">нет файла</span>');
-                                                }
+                        Forms\Components\TextInput::make('name')
+                            ->label('Название')
+                            ->required()
+                            ->maxLength(255)
+                            ->columnSpan(2),
+                        Forms\Components\Select::make('category_id')
+                            ->label('Категория')
+                            ->relationship('category', 'name')
+                            ->searchable()
+                            ->preload(),
+                        Forms\Components\TextInput::make('sku')->label('Артикул'),
+                        Forms\Components\TextInput::make('barcode')->label('Штрихкод'),
+                        Forms\Components\TextInput::make('unit')->label('Ед. изм.')->maxLength(32),
+                        Forms\Components\Textarea::make('description')
+                            ->label('Описание')
+                            ->rows(3)
+                            ->columnSpanFull(),
+                        Forms\Components\Toggle::make('is_active')
+                            ->label('Активен на витрине')
+                            ->default(true)
+                            ->inline(false),
+                        Forms\Components\Toggle::make('is_deleted_from_1c')
+                            ->label('Удалён в 1С')
+                            ->inline(false),
+                    ])
+                    ->columns(3),
 
-                                                return new HtmlString(
-                                                    '<img src="'.e((string) $url).'" class="h-24 w-24 rounded object-cover ring-1 ring-gray-200" alt="" />'
-                                                );
-                                            }),
-                                        Forms\Components\TextInput::make('sort_order')
-                                            ->label('Порядок')
-                                            ->numeric()
-                                            ->default(0)
-                                            ->helperText('0 = основное'),
-                                        Forms\Components\Hidden::make('path')->dehydrated(true),
-                                        Forms\Components\Hidden::make('url')->dehydrated(true),
-                                        Forms\Components\Hidden::make('source')->dehydrated(true),
-                                        Forms\Components\Hidden::make('tenant_id')->dehydrated(true),
-                                    ])
-                                    ->orderColumn('sort_order')
-                                    ->reorderable()
-                                    ->reorderableWithButtons()
-                                    ->collapsible()
-                                    ->itemLabel(function (array $state): ?string {
-                                        return 'Фото · порядок '.($state['sort_order'] ?? '0');
+                Forms\Components\Section::make('Изображения')
+                    ->description('Первое по порядку — основное на сайте. Превью 96×96, без растягивания.')
+                    ->schema([
+                        Forms\Components\Repeater::make('images')
+                            ->relationship()
+                            ->label('Текущие фото')
+                            ->schema([
+                                Forms\Components\Placeholder::make('preview')
+                                    ->label('')
+                                    ->content(function (Get $get): HtmlString {
+                                        $url = $get('url');
+                                        $path = $get('path');
+                                        if (filled($path) && ! filled($url)) {
+                                            $relative = str_starts_with((string) $path, 'products/')
+                                                ? $path
+                                                : 'products/'.$path;
+                                            $url = asset('storage/'.$relative);
+                                        }
+                                        if (! filled($url)) {
+                                            return new HtmlString(
+                                                '<div class="flex h-24 w-24 items-center justify-center rounded-lg bg-gray-100 text-xs text-gray-400">нет файла</div>'
+                                            );
+                                        }
+
+                                        return new HtmlString(
+                                            '<img src="'.e((string) $url).'" alt="" '
+                                            .'class="h-24 w-24 shrink-0 rounded-lg object-cover ring-1 ring-gray-200" '
+                                            .'style="height:96px;width:96px;object-fit:cover;" />'
+                                        );
                                     })
-                                    ->defaultItems(0)
-                                    ->addable(false)
-                                    ->deletable()
-                                    ->columns(1),
-                                Forms\Components\FileUpload::make('new_images')
-                                    ->label('Добавить новые фото')
-                                    ->disk('public')
-                                    ->directory(fn (): string => 'products/'.self::tenantSlug().'/'.now()->format('Y/m'))
-                                    ->visibility('public')
-                                    ->image()
-                                    ->multiple()
-                                    ->reorderable()
-                                    ->maxFiles(15)
-                                    ->dehydrated(true),
+                                    ->columnSpan(1),
+                                Forms\Components\TextInput::make('sort_order')
+                                    ->label('Порядок')
+                                    ->numeric()
+                                    ->default(0)
+                                    ->minValue(0)
+                                    ->columnSpan(1),
+                                Forms\Components\Hidden::make('path'),
+                                Forms\Components\Hidden::make('url'),
+                                Forms\Components\Hidden::make('source'),
+                                Forms\Components\Hidden::make('tenant_id')
+                                    ->default(fn () => app(TenantContext::class)->id()),
                             ])
-                            ->columnSpan(['default' => 1, 'md' => 1]),
-                        Forms\Components\Section::make('Основное')
+                            ->columns(2)
+                            ->grid(4)
+                            ->itemLabel(fn (array $state): ?string => null)
+                            ->collapsible(false)
+                            ->reorderable()
+                            ->orderColumn('sort_order')
+                            ->addable(false)
+                            ->deletable()
+                            ->defaultItems(0),
+
+                        Forms\Components\FileUpload::make('new_images')
+                            ->label('Добавить фото')
+                            ->disk('public')
+                            ->directory(fn (): string => 'products/'.self::tenantSlug().'/'.now()->format('Y/m'))
+                            ->visibility('public')
+                            ->image()
+                            ->imagePreviewHeight('96')
+                            ->panelLayout('grid')
+                            ->multiple()
+                            ->reorderable()
+                            ->maxFiles(15)
+                            ->dehydrated(true)
+                            ->helperText('Можно выбрать несколько файлов сразу'),
+                    ]),
+
+                Forms\Components\Section::make('Характеристики')
+                    ->description('Свойства товара (цвет, размер, материал…). Для вариантов отметьте «Вариант».')
+                    ->schema([
+                        Forms\Components\Repeater::make('features')
+                            ->relationship()
+                            ->label('')
                             ->schema([
                                 Forms\Components\TextInput::make('name')
                                     ->label('Название')
                                     ->required()
+                                    ->maxLength(120)
+                                    ->placeholder('Цвет'),
+                                Forms\Components\TextInput::make('value')
+                                    ->label('Значение')
+                                    ->required()
                                     ->maxLength(255)
-                                    ->columnSpanFull(),
-                                Forms\Components\TextInput::make('slug')->label('ЧПУ (slug)'),
-                                Forms\Components\Select::make('category_id')
-                                    ->label('Категория')
-                                    ->relationship('category', 'name'),
-                                Forms\Components\TextInput::make('sku')->label('Артикул'),
-                                Forms\Components\TextInput::make('barcode')->label('Штрихкод'),
-                                Forms\Components\TextInput::make('unit')->label('Ед. изм.'),
-                                Forms\Components\Textarea::make('description')
-                                    ->label('Описание')
-                                    ->rows(4)
-                                    ->columnSpanFull(),
+                                    ->placeholder('Чёрный'),
+                                Forms\Components\TextInput::make('group_name')
+                                    ->label('Группа')
+                                    ->maxLength(120)
+                                    ->placeholder('Основное'),
+                                Forms\Components\TextInput::make('sort_order')
+                                    ->label('Порядок')
+                                    ->numeric()
+                                    ->default(0),
+                                Forms\Components\Toggle::make('is_variant')
+                                    ->label('Вариант')
+                                    ->helperText('Участвует в выборе размера/цвета')
+                                    ->inline(false),
+                                Forms\Components\Hidden::make('tenant_id')
+                                    ->default(fn () => app(TenantContext::class)->id()),
                             ])
-                            ->columns(2)
-                            ->columnSpan(['default' => 1, 'md' => 2]),
+                            ->columns(5)
+                            ->defaultItems(0)
+                            ->reorderable()
+                            ->collapsible()
+                            ->itemLabel(fn (array $state): ?string => filled($state['name'] ?? null)
+                                ? (($state['name'] ?? '').': '.($state['value'] ?? ''))
+                                : 'Характеристика')
+                            ->addActionLabel('Добавить характеристику')
+                            ->mutateRelationshipDataBeforeCreateUsing(function (array $data): array {
+                                $data['tenant_id'] = $data['tenant_id'] ?? app(TenantContext::class)->id();
+
+                                return $data;
+                            }),
                     ]),
-                Forms\Components\Section::make('Статус')
+
+                Forms\Components\Section::make('Склад')
+                    ->description('Остатки по складам')
                     ->schema([
-                        Forms\Components\Toggle::make('is_active')
-                            ->label('Активен на витрине')
-                            ->default(true),
-                        Forms\Components\Toggle::make('is_deleted_from_1c')
-                            ->label('Удалён в 1С'),
-                    ])
-                    ->columns(2),
+                        Forms\Components\Repeater::make('stocks')
+                            ->relationship()
+                            ->label('')
+                            ->schema([
+                                Forms\Components\Select::make('warehouse_id')
+                                    ->label('Склад')
+                                    ->relationship('warehouse', 'name')
+                                    ->searchable()
+                                    ->preload()
+                                    ->required()
+                                    ->columnSpan(2),
+                                Forms\Components\TextInput::make('quantity')
+                                    ->label('Количество')
+                                    ->numeric()
+                                    ->default(0)
+                                    ->required()
+                                    ->columnSpan(1),
+                                Forms\Components\Hidden::make('tenant_id')
+                                    ->default(fn () => app(TenantContext::class)->id()),
+                            ])
+                            ->columns(3)
+                            ->defaultItems(0)
+                            ->addActionLabel('Добавить остаток')
+                            ->mutateRelationshipDataBeforeCreateUsing(function (array $data): array {
+                                $data['tenant_id'] = $data['tenant_id'] ?? app(TenantContext::class)->id();
+
+                                return $data;
+                            }),
+                    ]),
+
                 Forms\Components\Section::make('Цены')
                     ->schema([
                         Forms\Components\Repeater::make('prices')
                             ->relationship('prices')
+                            ->label('')
                             ->schema([
                                 Forms\Components\Select::make('price_type_id')
-                                    ->label('Тип')
+                                    ->label('Тип цены')
                                     ->relationship('priceType', 'name')
                                     ->required(),
                                 Forms\Components\TextInput::make('price')
                                     ->label('Цена')
                                     ->numeric()
-                                    ->required(),
+                                    ->required()
+                                    ->suffix('₽'),
                                 Forms\Components\Hidden::make('tenant_id')
                                     ->default(fn () => app(TenantContext::class)->id()),
                             ])
                             ->columns(2)
                             ->defaultItems(0)
+                            ->addActionLabel('Добавить цену')
                             ->mutateRelationshipDataBeforeCreateUsing(function (array $data): array {
                                 $data['tenant_id'] = $data['tenant_id'] ?? app(TenantContext::class)->id();
 
@@ -210,7 +298,7 @@ class ProductResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        return parent::getEloquentQuery()->with(['images']);
+        return parent::getEloquentQuery()->with(['images', 'features', 'stocks.warehouse', 'prices']);
     }
 
     public static function table(Table $table): Table
@@ -235,6 +323,10 @@ class ProductResource extends Resource
                         ? number_format($record->price, 0, ',', ' ').' ₽'
                         : null)
                     ->placeholder('—'),
+                Tables\Columns\TextColumn::make('stock_qty')
+                    ->label('Остаток')
+                    ->getStateUsing(fn (Product $record): string => number_format($record->stockTotal(), 0, ',', ' '))
+                    ->alignRight(),
                 Tables\Columns\TextColumn::make('images_count')
                     ->label('Фото')
                     ->counts('images')
