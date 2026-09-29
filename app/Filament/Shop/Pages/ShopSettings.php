@@ -24,13 +24,9 @@ class ShopSettings extends Page implements HasForms
     use InteractsWithForms;
 
     protected static ?string $navigationIcon = 'heroicon-o-cog-6-tooth';
-
     protected static ?string $navigationLabel = 'Настройки магазина';
-
     protected static ?string $title = 'Настройки магазина';
-
     protected static ?int $navigationSort = 90;
-
     protected static string $view = 'filament.shop.pages.shop-settings';
 
     public ?array $data = [];
@@ -69,6 +65,8 @@ class ShopSettings extends Page implements HasForms
             'yandex_delivery_source_lat' => $settings['yandex_delivery_source_lat'] ?? null,
             'yandex_delivery_taxi_class' => (string) ($settings['yandex_delivery_taxi_class'] ?? 'express'),
             'yandex_delivery_test_mode' => (bool) ($settings['yandex_delivery_test_mode'] ?? false),
+            'dadata_api_key' => (string) ($settings['dadata_api_key'] ?? ''),
+            'dadata_secret_key' => (string) ($settings['dadata_secret_key'] ?? ''),
             'logo_path' => $tenant->logo_path,
             'custom_domain' => (string) ($tenant->domains()->where('is_primary', true)->value('domain') ?? ''),
         ]);
@@ -100,7 +98,7 @@ class ShopSettings extends Page implements HasForms
                     ])
                     ->columns(2),
                 Section::make('Контакты для покупателей')
-                    ->description('Телефон — в шапке и подвале; адрес, часы и описание — в подвале.')
+                    ->description('Телефон — в подвале; адрес, часы и описание — в подвале.')
                     ->schema([
                         TextInput::make('phone')->label('Телефон')->tel()->placeholder('+7 (999) 123-45-67'),
                         TextInput::make('email')->label('Email')->email()->placeholder('shop@example.com')
@@ -113,7 +111,6 @@ class ShopSettings extends Page implements HasForms
                     ])
                     ->columns(2),
                 Section::make('Разделы витрины')
-                    ->description('Включение блоков на главной и пунктов меню')
                     ->schema([
                         Toggle::make('enable_articles')->label('Статьи'),
                         Toggle::make('enable_news')->label('Новости'),
@@ -121,68 +118,52 @@ class ShopSettings extends Page implements HasForms
                     ])
                     ->columns(3),
                 Section::make('Онлайн-оплата (ЮKassa)')
-                    ->description('Покупатель сможет оплатить картой на checkout. Webhook в ЮKassa: ваш-сайт/payment/webhook')
                     ->schema([
-                        TextInput::make('yookassa_shop_id')
-                            ->label('Shop ID')
-                            ->maxLength(64),
-                        TextInput::make('yookassa_secret_key')
-                            ->label('Секретный ключ')
-                            ->password()
-                            ->revealable()
-                            ->maxLength(255),
+                        TextInput::make('yookassa_shop_id')->label('Shop ID')->maxLength(64),
+                        TextInput::make('yookassa_secret_key')->label('Секретный ключ')->password()->revealable()->maxLength(255),
                     ])
                     ->columns(2),
                 Section::make('Яндекс Доставка')
-                    ->description('Боевой контур: OAuth-токен + ID станции отгрузки. Адрес склада — только для Express.')
+                    ->description('Боевой: OAuth + ID станции. Тумблер «Тестовый контур» — демо-токен и станция.')
                     ->schema([
                         TextInput::make('yandex_delivery_token')
                             ->label('Yandex API key (OAuth)')
-                            ->password()
-                            ->revealable()
-                            ->maxLength(512)
-                            ->helperText('dostavka.yandex.ru → Интеграции → Получить токен')
+                            ->password()->revealable()->maxLength(512)
+                            ->helperText('dostavka.yandex.ru → Интеграции')
                             ->columnSpanFull(),
                         TextInput::make('yandex_delivery_station_id')
                             ->label('ID станции отгрузки')
-                            ->helperText('platform_station_id из кабинета (как в «Параметры соединения»). Нужен для доставки по России.')
-                            ->maxLength(64)
-                            ->columnSpanFull(),
-                        TextInput::make('yandex_delivery_default_city')
-                            ->label('Город по умолчанию')
-                            ->placeholder('Москва')
-                            ->maxLength(120),
+                            ->helperText('platform_station_id из кабинета')
+                            ->maxLength(64)->columnSpanFull(),
+                        TextInput::make('yandex_delivery_default_city')->label('Город по умолчанию')->placeholder('Москва')->maxLength(120),
                         Select::make('yandex_delivery_taxi_class')
                             ->label('Тариф Express')
-                            ->options([
-                                'courier' => 'Курьер',
-                                'express' => 'Экспресс',
-                                'cargo' => 'Грузовой',
-                            ])
+                            ->options(['courier' => 'Курьер', 'express' => 'Экспресс', 'cargo' => 'Грузовой'])
                             ->default('express'),
                         TextInput::make('yandex_delivery_source_address')
-                            ->label('Адрес склада (только Express)')
-                            ->helperText('Не обязателен при ID станции. Нужен для «Курьер сегодня».')
-                            ->maxLength(500)
-                            ->placeholder('Москва, ул. …')
-                            ->columnSpanFull(),
-                        TextInput::make('yandex_delivery_source_lon')
-                            ->label('Долгота склада')
-                            ->numeric()
-                            ->step(0.000001),
-                        TextInput::make('yandex_delivery_source_lat')
-                            ->label('Широта склада')
-                            ->numeric()
-                            ->step(0.000001),
+                            ->label('Адрес склада (Express)')
+                            ->maxLength(500)->columnSpanFull(),
+                        TextInput::make('yandex_delivery_source_lon')->label('Долгота')->numeric()->step(0.000001),
+                        TextInput::make('yandex_delivery_source_lat')->label('Широта')->numeric()->step(0.000001),
                         Toggle::make('yandex_delivery_test_mode')
                             ->label('Тестовый контур')
-                            ->helperText('Только без своего ключа. Боевой токен всегда на prod API.')
-                            ->default(false)
-                            ->columnSpanFull(),
+                            ->helperText('Вкл.: tst + демо-токен и станция. Выкл.: ваш OAuth и ID станции.')
+                            ->default(false)->columnSpanFull(),
                     ])
                     ->columns(2),
+                Section::make('Подсказки адресов (DaData)')
+                    ->description('Автодополнение адреса на checkout. Ключ из dadata.ru → API.')
+                    ->schema([
+                        TextInput::make('dadata_api_key')
+                            ->label('API-ключ')
+                            ->password()->revealable()->maxLength(128)->columnSpanFull(),
+                        TextInput::make('dadata_secret_key')
+                            ->label('Секретный ключ')
+                            ->password()->revealable()->maxLength(128)
+                            ->helperText('Для серверных методов; на витрине используется API-ключ.')
+                            ->columnSpanFull(),
+                    ]),
                 Section::make('Свой домен')
-                    ->description('Укажите домен (например shop.example.com). Настройте A/CNAME на этот сервер. После DNS витрина откроется без /{slug}.')
                     ->schema([
                         TextInput::make('custom_domain')
                             ->label('Домен')
@@ -193,9 +174,7 @@ class ShopSettings extends Page implements HasForms
                     ]),
                 Section::make('Обмен с 1С')
                     ->schema([
-                        Placeholder::make('exchange_url')
-                            ->label('URL обмена')
-                            ->content(fn () => $this->exchangeUrl()),
+                        Placeholder::make('exchange_url')->label('URL обмена')->content(fn () => $this->exchangeUrl()),
                     ])
                     ->collapsed(),
             ])
@@ -205,11 +184,8 @@ class ShopSettings extends Page implements HasForms
     protected function tenant(): Tenant
     {
         $user = auth()->user();
-
         if ($user !== null && $user->tenant_id) {
-            $tenant = $user->relationLoaded('tenant')
-                ? $user->tenant
-                : $user->tenant()->first();
+            $tenant = $user->relationLoaded('tenant') ? $user->tenant : $user->tenant()->first();
             if ($tenant === null) {
                 $tenant = Tenant::query()->find($user->tenant_id);
             }
@@ -217,17 +193,13 @@ class ShopSettings extends Page implements HasForms
                 return $tenant->loadMissing('theme');
             }
         }
-
         $ctx = app(TenantContext::class)->current();
         if ($ctx !== null) {
             return $ctx->loadMissing('theme');
         }
-
         if ($user !== null && method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin()) {
             $sessionId = session('filament_shop_tenant_id');
-            $tenant = $sessionId
-                ? Tenant::query()->find($sessionId)
-                : Tenant::query()->orderBy('id')->first();
+            $tenant = $sessionId ? Tenant::query()->find($sessionId) : Tenant::query()->orderBy('id')->first();
             if ($tenant !== null) {
                 session(['filament_shop_tenant_id' => $tenant->id]);
                 app(TenantContext::class)->set($tenant);
@@ -235,7 +207,6 @@ class ShopSettings extends Page implements HasForms
                 return $tenant->loadMissing('theme');
             }
         }
-
         abort(403, 'Магазин не определён. Войдите учётной записью владельца магазина.');
     }
 
@@ -249,12 +220,11 @@ class ShopSettings extends Page implements HasForms
     protected function customDomainStatus(): string
     {
         $domain = $this->tenant()->domains()->where('is_primary', true)->value('domain');
-
         if ($domain) {
-            return 'Активен: https://'.$domain.' — убедитесь, что DNS указывает на этот сервер.';
+            return 'Активен: https://'.$domain;
         }
 
-        return 'Не подключён — витрина доступна по path: '.$this->storefrontUrlPreview();
+        return 'Не подключён — '.$this->storefrontUrlPreview();
     }
 
     protected function exchangeUrl(): string
@@ -266,7 +236,6 @@ class ShopSettings extends Page implements HasForms
     {
         $data = $this->form->getState();
         $tenant = $this->tenant();
-
         $reserved = config('atlas.reserved_paths', []);
         $slug = strtolower(trim((string) ($data['slug'] ?? '')));
 
@@ -275,7 +244,6 @@ class ShopSettings extends Page implements HasForms
 
             return;
         }
-
         if (Tenant::query()->where('slug', $slug)->where('id', '!=', $tenant->id)->exists()) {
             Notification::make()->title('Адрес «'.$slug.'» уже занят')->danger()->send();
 
@@ -303,9 +271,10 @@ class ShopSettings extends Page implements HasForms
         $settings['yandex_delivery_source_lon'] = ($lon !== null && $lon !== '') ? (float) $lon : null;
         $settings['yandex_delivery_source_lat'] = ($lat !== null && $lat !== '') ? (float) $lat : null;
         $settings['yandex_delivery_taxi_class'] = in_array(($data['yandex_delivery_taxi_class'] ?? ''), ['courier', 'express', 'cargo'], true)
-            ? $data['yandex_delivery_taxi_class']
-            : 'express';
+            ? $data['yandex_delivery_taxi_class'] : 'express';
         $settings['yandex_delivery_test_mode'] = (bool) ($data['yandex_delivery_test_mode'] ?? false);
+        $settings['dadata_api_key'] = trim((string) ($data['dadata_api_key'] ?? '')) ?: null;
+        $settings['dadata_secret_key'] = trim((string) ($data['dadata_secret_key'] ?? '')) ?: null;
 
         $logo = $data['logo_path'] ?? null;
         if (is_array($logo)) {
@@ -323,59 +292,41 @@ class ShopSettings extends Page implements HasForms
         ])->save();
 
         $this->syncCustomDomain($tenant, (string) ($data['custom_domain'] ?? ''));
-
         app(TenantContext::class)->set($tenant->fresh());
-
         $this->fillFromTenant();
 
-        Notification::make()
-            ->title('Настройки сохранены')
-            ->body('Контакты, логотип и домен обновятся на витрине после обновления страницы.')
-            ->success()
-            ->send();
+        Notification::make()->title('Настройки сохранены')->success()->send();
     }
 
     protected function syncCustomDomain(Tenant $tenant, string $domain): void
     {
         $domain = strtolower(trim(preg_replace('#^https?://#i', '', $domain), '/'));
         $domain = preg_replace('#/.*$#', '', $domain) ?? '';
-
         if ($domain === '') {
             $tenant->domains()->delete();
 
             return;
         }
-
         if (! preg_match('/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i', $domain)) {
-            Notification::make()->title('Некорректный домен')->body('Укажите hostname вида shop.example.com')->warning()->send();
+            Notification::make()->title('Некорректный домен')->warning()->send();
 
             return;
         }
-
         $taken = \App\Models\TenantDomain::query()
-            ->where('domain', $domain)
-            ->where('tenant_id', '!=', $tenant->id)
-            ->exists();
-
+            ->where('domain', $domain)->where('tenant_id', '!=', $tenant->id)->exists();
         if ($taken) {
-            Notification::make()->title('Домен уже занят другим магазином')->danger()->send();
+            Notification::make()->title('Домен уже занят')->danger()->send();
 
             return;
         }
-
         $tenant->domains()->delete();
-        $tenant->domains()->create([
-            'domain' => $domain,
-            'is_primary' => true,
-        ]);
+        $tenant->domains()->create(['domain' => $domain, 'is_primary' => true]);
     }
 
     public function getFormActions(): array
     {
         return [
-            Action::make('save')
-                ->label('Сохранить')
-                ->submit('save'),
+            Action::make('save')->label('Сохранить')->submit('save'),
             Action::make('openStorefront')
                 ->label('Открыть витрину')
                 ->url(fn (): string => $this->tenant()->fresh()->url())
