@@ -166,6 +166,7 @@ class ProductResource extends Resource
                                     ->label('Характеристики')
                                     ->keyLabel('Свойство')
                                     ->valueLabel('Значение')
+                                    ->default([])
                                     ->columnSpanFull(),
                                 Forms\Components\Hidden::make('tenant_id')
                                     ->default(fn () => app(TenantContext::class)->id()),
@@ -176,7 +177,7 @@ class ProductResource extends Resource
                             ->collapsible()
                             ->itemLabel(fn (array $state): ?string => $state['name'] ?? null),
                     ])
-                    ->collapsed(fn (?Product $record) => $record === null || $record->variants()->count() === 0),
+                    ->collapsed(),
 
                 Forms\Components\Section::make('Склад')
                     ->schema([
@@ -290,7 +291,8 @@ class ProductResource extends Resource
 
     public static function getEloquentQuery(): \Illuminate\Database\Eloquent\Builder
     {
-        return parent::getEloquentQuery()->with(['images', 'features', 'stocks.warehouse', 'prices', 'variants']);
+        // Без variants/features в eager — иначе 500, если таблица/колонка ещё не мигрировала
+        return parent::getEloquentQuery()->with(['images', 'stocks', 'prices']);
     }
 
     public static function table(Table $table): Table
@@ -302,7 +304,13 @@ class ProductResource extends Resource
                     ->label('')
                     ->circular()
                     ->size(40)
-                    ->getStateUsing(fn (Product $record): ?string => $record->images->sortBy('sort_order')->first()?->url),
+                    ->getStateUsing(function (Product $record): ?string {
+                        try {
+                            return $record->images->sortBy('sort_order')->first()?->url;
+                        } catch (\Throwable) {
+                            return null;
+                        }
+                    }),
                 Tables\Columns\TextColumn::make('name')
                     ->label('Название')
                     ->searchable()
@@ -311,18 +319,26 @@ class ProductResource extends Resource
                 Tables\Columns\TextColumn::make('sku')->label('Артикул'),
                 Tables\Columns\TextColumn::make('price')
                     ->label('Цена')
-                    ->getStateUsing(fn (Product $record): ?string => $record->price !== null
-                        ? number_format($record->price, 0, ',', ' ').' ₽'
-                        : null)
+                    ->getStateUsing(function (Product $record): ?string {
+                        try {
+                            $price = $record->price;
+
+                            return $price !== null
+                                ? number_format((float) $price, 0, ',', ' ').' ₽'
+                                : null;
+                        } catch (\Throwable) {
+                            return null;
+                        }
+                    })
                     ->placeholder('—'),
                 Tables\Columns\TextColumn::make('stock_qty')
                     ->label('Остаток')
                     ->getStateUsing(function (Product $record): string {
-                        $qty = $record->relationLoaded('variants') && $record->variants->isNotEmpty()
-                            ? (float) $record->variants->sum('quantity')
-                            : $record->stockTotal();
-
-                        return number_format($qty, 0, ',', ' ');
+                        try {
+                            return number_format($record->stockTotal(), 0, ',', ' ');
+                        } catch (\Throwable) {
+                            return '0';
+                        }
                     })
                     ->alignRight(),
                 Tables\Columns\TextColumn::make('images_count')
