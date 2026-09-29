@@ -67,10 +67,6 @@
             @if ($enableNews)
                 <a href="{{ route('news.index') }}" class="font-medium transition hover:text-primary">Новости</a>
             @endif
-            @php($categoryMenu = \App\Models\Category::menuTree())
-            @foreach ($categoryMenu as $category)
-                @include('shop.partials.category-menu', ['category' => $category, 'menuLevel' => 0])
-            @endforeach
         </nav>
 
         <form action="{{ route('catalog.index') }}" method="GET" class="hidden max-w-xs flex-1 lg:block">
@@ -84,9 +80,6 @@
         </form>
 
         <div class="flex items-center gap-3">
-            @if (filled($phone))
-                <a href="tel:{{ $phoneHref }}" class="header-phone hidden text-sm font-medium text-slate-600 transition hover:text-primary sm:inline" title="Позвонить">{{ $phone }}</a>
-            @endif
             <a href="{{ route('catalog.index') }}" class="p-1.5 text-slate-600 transition hover:text-primary lg:hidden" title="Поиск / каталог">
                 <svg class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"/></svg>
             </a>
@@ -111,6 +104,16 @@
             @endauth
         </div>
     </div>
+    @php($categoryMenu = \App\Models\Category::menuTree())
+    @if ($categoryMenu->isNotEmpty())
+        <div class="border-t border-slate-100 bg-slate-50/80">
+            <nav class="mx-auto flex max-w-6xl flex-wrap items-center gap-1 px-4 py-2 text-sm md:gap-2">
+                @foreach ($categoryMenu as $category)
+                    @include('shop.partials.category-menu', ['category' => $category, 'menuLevel' => 0])
+                @endforeach
+            </nav>
+        </div>
+    @endif
 </header>
 
 <main class="mx-auto max-w-6xl flex-1 px-4 py-8">
