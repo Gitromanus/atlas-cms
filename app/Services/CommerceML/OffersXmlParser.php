@@ -19,9 +19,15 @@ class OffersXmlParser
 
     public function import(string $filename): int
     {
-        $path = $this->store->filePath($filename);
+        $path = null;
+        foreach ([$this->store->dirPath($filename), $this->store->filePath($filename)] as $candidate) {
+            if (is_file($candidate)) {
+                $path = $candidate;
+                break;
+            }
+        }
 
-        if (! $this->store->hasFile($filename)) {
+        if ($path === null) {
             throw new \RuntimeException("Файл {$filename} не найден");
         }
 
