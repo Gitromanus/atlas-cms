@@ -47,37 +47,153 @@
         </div>
     @endif
 
-    <form method="GET" action="{{ url()->current() }}">
-        <div class="grid items-start gap-6 lg:grid-cols-[250px_1fr]">
+    <form method="GET" action="{{ url()->current() }}" id="catalog-filters">
+        @php
+            $colorMap = [
+                'белый' => '#ffffff', 'белая' => '#ffffff', 'белое' => '#ffffff', 'white' => '#ffffff',
+                'чёрный' => '#111111', 'черный' => '#111111', 'чёрная' => '#111111', 'черная' => '#111111', 'black' => '#111111',
+                'серый' => '#9ca3af', 'серая' => '#9ca3af', 'gray' => '#9ca3af', 'grey' => '#9ca3af',
+                'красный' => '#ef4444', 'красная' => '#ef4444', 'red' => '#ef4444',
+                'синий' => '#3b82f6', 'синяя' => '#3b82f6', 'blue' => '#3b82f6',
+                'голубой' => '#38bdf8', 'голубая' => '#38bdf8',
+                'зелёный' => '#22c55e', 'зеленый' => '#22c55e', 'зелёная' => '#22c55e', 'зеленая' => '#22c55e', 'green' => '#22c55e',
+                'жёлтый' => '#eab308', 'желтый' => '#eab308', 'yellow' => '#eab308',
+                'оранжевый' => '#f97316', 'orange' => '#f97316',
+                'розовый' => '#ec4899', 'pink' => '#ec4899',
+                'фиолетовый' => '#a855f7', 'purple' => '#a855f7',
+                'коричневый' => '#92400e', 'brown' => '#92400e',
+                'бежевый' => '#d6c3a8', 'beige' => '#d6c3a8',
+                'бордовый' => '#9f1239', 'burgundy' => '#9f1239',
+                'хаки' => '#78716c', 'khaki' => '#78716c',
+                'оливковый' => '#65a30d', 'olive' => '#65a30d',
+                'золотой' => '#ca8a04', 'gold' => '#ca8a04',
+                'серебряный' => '#cbd5e1', 'silver' => '#cbd5e1',
+                'мультиколор' => 'linear-gradient(135deg,#ef4444,#eab308,#22c55e,#3b82f6)',
+                'разноцветный' => 'linear-gradient(135deg,#ef4444,#eab308,#22c55e,#3b82f6)',
+            ];
+            $resolveColor = function (string $value) use ($colorMap): ?string {
+                $key = mb_strtolower(trim($value));
+                if (isset($colorMap[$key])) {
+                    return $colorMap[$key];
+                }
+                foreach ($colorMap as $name => $hex) {
+                    if (str_contains($key, $name) || str_contains($name, $key)) {
+                        return $hex;
+                    }
+                }
+                if (preg_match('/^#?[0-9a-fA-F]{6}$/', $value)) {
+                    return str_starts_with($value, '#') ? $value : '#'.$value;
+                }
+
+                return null;
+            };
+            $activeFilterCount = collect($selectedFilters)->flatten()->count();
+        @endphp
+
+        <div class="grid items-start gap-5 lg:grid-cols-[220px_1fr]">
             @if ($filterOptions !== [])
-                <aside class="space-y-5 rounded-theme border border-slate-200 bg-white p-5 lg:sticky lg:top-20">
-                    <div class="flex items-center justify-between">
-                        <h2 class="text-base font-bold">Фильтры</h2>
-                        <a href="{{ url()->current() }}" class="text-xs text-slate-400 transition hover:text-primary">Сбросить</a>
-                    </div>
-
-                    @foreach ($filterOptions as $name => $option)
-                        <div>
-                            <p class="mb-2 text-sm font-semibold text-slate-700">{{ $name }}</p>
-                            <div class="space-y-1.5">
-                                @foreach ($option['values'] as $value)
-                                    <label class="flex cursor-pointer items-center gap-2 text-sm text-slate-600 transition hover:text-slate-900">
-                                        <input type="checkbox"
-                                               name="f[{{ $name }}][]"
-                                               value="{{ $value }}"
-                                               @checked(in_array($value, $selectedFilters[$name] ?? [], true))
-                                               class="h-4 w-4 rounded border-slate-300 accent-[var(--color-primary)]">
-                                        {{ $value }}
-                                    </label>
-                                @endforeach
-                            </div>
-                        </div>
-                    @endforeach
-
-                    <button type="submit"
-                            class="w-full rounded-theme bg-primary px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90">
-                        Применить
+                <aside class="rounded-theme border border-slate-200 bg-white lg:sticky lg:top-20"
+                       x-data="{ open: window.matchMedia('(min-width: 1024px)').matches }">
+                    <button type="button"
+                            class="flex w-full items-center justify-between gap-2 px-4 py-3 text-left lg:pointer-events-none"
+                            @click="open = !open"
+                            :class="open && 'border-b border-slate-100'">
+                        <span class="flex items-center gap-2 text-sm font-bold text-slate-800">
+                            Фильтры
+                            @if ($activeFilterCount > 0)
+                                <span class="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-white">{{ $activeFilterCount }}</span>
+                            @endif
+                        </span>
+                        <span class="flex items-center gap-2">
+                            @if ($activeFilterCount > 0)
+                                <a href="{{ url()->current() }}" class="pointer-events-auto text-xs font-medium text-slate-400 hover:text-primary" @click.stop>Сбросить</a>
+                            @endif
+                            <svg class="h-4 w-4 text-slate-400 transition lg:hidden" :class="open && 'rotate-180'" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </span>
                     </button>
+
+                    <div class="space-y-4 px-4 py-3" x-show="open" x-cloak
+                         x-transition:enter="transition ease-out duration-150"
+                         x-transition:enter-start="opacity-0 -translate-y-1"
+                         x-transition:enter-end="opacity-100 translate-y-0">
+                        @foreach ($filterOptions as $name => $option)
+                            @php $type = $option['type'] ?? 'default'; @endphp
+                            <div>
+                                <p class="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">{{ $name }}</p>
+
+                                @if ($type === 'color')
+                                    <div class="flex flex-wrap gap-1.5">
+                                        @foreach ($option['values'] as $row)
+                                            @php
+                                                $value = is_array($row) ? $row['value'] : $row;
+                                                $count = is_array($row) ? ($row['count'] ?? null) : null;
+                                                $hex = $resolveColor($value);
+                                                $checked = in_array($value, $selectedFilters[$name] ?? [], true);
+                                            @endphp
+                                            <label class="group relative cursor-pointer" title="{{ $value }}{{ $count !== null ? ' ('.$count.')' : '' }}">
+                                                <input type="checkbox" name="f[{{ $name }}][]" value="{{ $value }}" class="peer sr-only"
+                                                       @checked($checked) onchange="this.form.submit()">
+                                                @if ($hex)
+                                                    <span class="block h-8 w-8 rounded-lg border-2 transition peer-checked:border-primary peer-checked:ring-2 peer-checked:ring-primary/30 {{ $checked ? 'border-primary' : 'border-slate-200 hover:border-slate-300' }}"
+                                                          style="background: {{ $hex }};"></span>
+                                                @else
+                                                    <span class="flex h-8 min-w-8 items-center justify-center rounded-lg border-2 bg-slate-100 px-1 text-[9px] font-bold text-slate-600 transition peer-checked:border-primary peer-checked:ring-2 peer-checked:ring-primary/30 {{ $checked ? 'border-primary' : 'border-slate-200' }}">{{ mb_substr($value, 0, 2) }}</span>
+                                                @endif
+                                                @if ($count !== null)
+                                                    <span class="pointer-events-none absolute -right-1 -top-1 rounded bg-slate-800 px-1 text-[9px] font-bold text-white opacity-0 transition group-hover:opacity-100">{{ $count }}</span>
+                                                @endif
+                                            </label>
+                                        @endforeach
+                                    </div>
+
+                                @elseif ($type === 'size' || $type === 'brand')
+                                    <div class="flex flex-wrap gap-1.5">
+                                        @foreach ($option['values'] as $row)
+                                            @php
+                                                $value = is_array($row) ? $row['value'] : $row;
+                                                $count = is_array($row) ? ($row['count'] ?? null) : null;
+                                                $checked = in_array($value, $selectedFilters[$name] ?? [], true);
+                                            @endphp
+                                            <label class="cursor-pointer">
+                                                <input type="checkbox" name="f[{{ $name }}][]" value="{{ $value }}" class="peer sr-only"
+                                                       @checked($checked) onchange="this.form.submit()">
+                                                <span class="inline-flex min-w-[2.25rem] items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-xs font-semibold transition peer-checked:border-primary peer-checked:bg-primary peer-checked:text-white {{ $checked ? 'border-primary bg-primary text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300' }}">
+                                                    {{ $value }}
+                                                    @if ($count !== null)
+                                                        <span class="text-[10px] font-normal opacity-70">{{ $count }}</span>
+                                                    @endif
+                                                </span>
+                                            </label>
+                                        @endforeach
+                                    </div>
+
+                                @else
+                                    <div class="max-h-40 space-y-0.5 overflow-y-auto pr-1">
+                                        @foreach ($option['values'] as $row)
+                                            @php
+                                                $value = is_array($row) ? $row['value'] : $row;
+                                                $count = is_array($row) ? ($row['count'] ?? null) : null;
+                                                $checked = in_array($value, $selectedFilters[$name] ?? [], true);
+                                            @endphp
+                                            <label class="flex cursor-pointer items-center justify-between gap-2 rounded-md px-1.5 py-1 text-sm text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">
+                                                <span class="flex min-w-0 items-center gap-2">
+                                                    <input type="checkbox" name="f[{{ $name }}][]" value="{{ $value }}"
+                                                           class="h-3.5 w-3.5 shrink-0 rounded border-slate-300 accent-[var(--color-primary)]"
+                                                           @checked($checked) onchange="this.form.submit()">
+                                                    <span class="truncate">{{ $value }}</span>
+                                                </span>
+                                                @if ($count !== null)
+                                                    <span class="shrink-0 text-[11px] tabular-nums text-slate-400">{{ $count }}</span>
+                                                @endif
+                                            </label>
+                                        @endforeach
+                                    </div>
+                                @endif
+                            </div>
+                        @endforeach
+                    </div>
                 </aside>
             @endif
 
