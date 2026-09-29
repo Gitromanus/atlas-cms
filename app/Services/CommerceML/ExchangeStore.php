@@ -30,12 +30,6 @@ class ExchangeStore
         return $this->baseDir().'/state.json';
     }
 
-    /**
-     * Старт сессии обмена для конкретного типа (catalog|sale).
-     *
-     * Если для типа уже есть валидная сессия — возвращаем её, чтобы
-     * повторные checkauth (1С вызывает их по несколько раз) не ломали обмен.
-     */
     public function startSession(string $type = 'catalog'): string
     {
         $existing = $this->get('session_id_'.$type);
@@ -79,40 +73,45 @@ class ExchangeStore
         File::put($this->stateFile(), json_encode($data, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
     }
 
-    /**
-     * Дозапись содержимого в файл (файлы от 1С передаются частями).
-     */
     public function appendToFile(string $filename, string $contents): void
     {
-        File::append($this->filePath($filename), $contents);
+        $path = $this->safePath($filename);
+        File::ensureDirectoryExists(dirname($path));
+        File::append($path, $contents);
     }
 
     public function filePath(string $filename): string
     {
-        return $this->baseDir().'/'.basename($filename);
+        return $this->baseDir().'/'.basename(str_replace(chr(92), '/', $filename));
+    }
+
+    public function dirPath(string $filename): string
+    {
+        return $this->safePath($filename);
     }
 
     /**
-     * Путь к файлу с сохранением структуры (import_files/dd/img.png).
+     * Безопасный путь внутри каталога обмена (защита от path traversal).
+     * Сохраняет структуру import_files/xx/file.jpeg от 1С.
      */
-    public function dirPath(string $filename): string
+    public function safePath(string $filename): string
     {
-        $relative = str_replace(['..', '\\'], '', ltrim($filename, '/\\'));
+        $relative = str_replace([chr(92), '..'], ['/', ''], $filename);
+        $relative = ltrim($relative, '/');
+        $relative = preg_replace('#/+#', '/', $relative) ?: basename($filename);
+
+        if (! str_contains($relative, '/')) {
+            return $this->baseDir().'/'.$relative;
+        }
 
         return $this->baseDir().'/'.$relative;
     }
 
-    /**
-     * Каталог обмена текущего магазина.
-     */
     public function directory(): string
     {
         return $this->baseDir();
     }
 
-    /**
-     * Распаковка всех zip-архивов в каталоге обмена (картинки общим архивом).
-     */
     public function extractZipFiles(): int
     {
         $total = 0;
@@ -125,12 +124,13 @@ class ExchangeStore
         return $total;
     }
 
-    /**
-     * Распаковка ZIP-архива в каталог обмена (картинки приходят общим архивом).
-     */
     public function extractZip(string $filename): int
     {
-        $path = $this->filePath($filename);
+        $path = $this->safePath($filename);
+
+        if (! File::exists($path)) {
+            $path = $this->filePath($filename);
+        }
 
         if (! File::exists($path)) {
             return 0;
@@ -163,15 +163,16 @@ class ExchangeStore
 
     public function hasFile(string $filename): bool
     {
-        return File::exists($this->filePath($filename));
+        return File::exists($this->safePath($filename))
+            || File::exists($this->filePath($filename));
     }
 
     public function deleteFile(string $filename): void
     {
-        $path = $this->filePath($filename);
-
-        if (File::exists($path)) {
-            File::delete($path);
+        foreach ([$this->safePath($filename), $this->filePath($filename)] as $path) {
+            if (File::exists($path) && is_file($path)) {
+                File::delete($path);
+            }
         }
     }
 
