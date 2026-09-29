@@ -15,15 +15,6 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Hash;
 
-/**
- * Обмен с 1С по протоколу CommerceML 2.09.
- *
- * Точка входа: /1c/exchange
- * Параметры: type (catalog|sale), mode (checkauth|init|file|import|query|success|failure)
- *
- * Авторизация: HTTP Basic (email и пароль владельца магазина — учётная запись
- * пользователя панели /shop, привязанная к тенанту).
- */
 class ExchangeController extends Controller
 {
     public function handle(Request $request): Response
@@ -121,7 +112,8 @@ class ExchangeController extends Controller
     {
         $limit = (int) config('atlas.onec.file_limit', 52428800);
 
-        return $this->plain("zip=yes\nfile_limit={$limit}");
+        // zip=no — 1С шлёт файлы поштучно, меньше риск 500 на shared из-за большого zip
+        return $this->plain("zip=no\nfile_limit={$limit}");
     }
 
     protected function file(Request $request, ExchangeStore $store, string $type): Response
@@ -133,21 +125,14 @@ class ExchangeController extends Controller
             return $this->plain("failure\nempty filename");
         }
 
-        $contents = $request->getContent();
-
-        if ($contents === '' || $contents === false) {
-            return $this->plain("failure\nempty body");
-        }
-
         $received = (array) $store->get('received_files', []);
+        $isFirstChunk = ! in_array($filename, $received, true);
 
-        if (! in_array($filename, $received, true)) {
+        if ($isFirstChunk) {
             if ($store->hasFile($filename)) {
                 $store->deleteFile($filename);
             }
-
             $received[] = $filename;
-
             if ($this->shouldLogFile($filename)) {
                 $store->set('received_files', $received);
             } else {
@@ -155,10 +140,22 @@ class ExchangeController extends Controller
             }
         }
 
-        $store->appendToFile($filename, $contents);
+        $bytes = $store->appendStream($filename, fopen('php://input', 'rb'));
+
+        if ($bytes === 0 && $isFirstChunk) {
+            $contents = $request->getContent();
+            if (is_string($contents) && $contents !== '') {
+                $store->appendToFile($filename, $contents);
+                $bytes = strlen($contents);
+            }
+        }
+
+        if ($bytes === 0) {
+            return $this->plain("failure\nempty body");
+        }
 
         if ($this->shouldLogFile($filename)) {
-            $this->log($store, $type, 'file', $filename, 'success', 'Файл получен ('.strlen($contents).' байт)');
+            $this->log($store, $type, 'file', $filename, 'success', "Файл получен ({$bytes} байт)");
         }
 
         return $this->plain('success');
