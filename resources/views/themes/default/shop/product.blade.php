@@ -18,6 +18,71 @@
         $props = $product->features->where('is_variant', false)->values();
         $ratingCnt = $product->relationLoaded('approvedReviews') ? $product->approvedReviews->count() : 0;
         $ratingAvg = $ratingCnt ? round($product->approvedReviews->avg('rating'), 1) : null;
+
+        $variantGroups = [];
+        foreach ($product->features->where('is_variant', true) as $f) {
+            $n = (string) $f->name;
+            $v = (string) $f->value;
+            if ($n === '' || $v === '') {
+                continue;
+            }
+            $variantGroups[$n][$v] = true;
+        }
+        foreach ($product->variants ?? [] as $variant) {
+            foreach ((array) ($variant->options ?? []) as $n => $v) {
+                if (! filled($v)) {
+                    continue;
+                }
+                $variantGroups[(string) $n][(string) $v] = true;
+            }
+        }
+        $variantGroups = array_map(fn ($vals) => array_keys($vals), $variantGroups);
+        $hasVariantPicker = $variantGroups !== [];
+
+        $colorMap = [
+            'белый' => '#ffffff', 'белая' => '#ffffff', 'white' => '#ffffff',
+            'чёрный' => '#111111', 'черный' => '#111111', 'black' => '#111111',
+            'серый' => '#9ca3af', 'gray' => '#9ca3af', 'grey' => '#9ca3af',
+            'красный' => '#ef4444', 'red' => '#ef4444',
+            'синий' => '#3b82f6', 'blue' => '#3b82f6',
+            'голубой' => '#38bdf8',
+            'зелёный' => '#22c55e', 'зеленый' => '#22c55e', 'green' => '#22c55e',
+            'жёлтый' => '#eab308', 'желтый' => '#eab308', 'yellow' => '#eab308',
+            'оранжевый' => '#f97316', 'orange' => '#f97316',
+            'розовый' => '#ec4899', 'pink' => '#ec4899',
+            'фиолетовый' => '#a855f7', 'purple' => '#a855f7',
+            'коричневый' => '#92400e', 'brown' => '#92400e',
+            'бежевый' => '#d6c3a8', 'beige' => '#d6c3a8',
+            'бордовый' => '#9f1239',
+        ];
+        $resolveColor = function (string $value) use ($colorMap): ?string {
+            $key = mb_strtolower(trim($value));
+            if (isset($colorMap[$key])) {
+                return $colorMap[$key];
+            }
+            foreach ($colorMap as $name => $hex) {
+                if (str_contains($key, $name)) {
+                    return $hex;
+                }
+            }
+
+            return null;
+        };
+        $isColorName = function (string $name): bool {
+            $n = mb_strtolower($name);
+
+            return str_contains($n, 'цвет') || str_contains($n, 'color');
+        };
+        $isSizeName = function (string $name): bool {
+            $n = mb_strtolower($name);
+
+            return str_contains($n, 'размер') || str_contains($n, 'size');
+        };
+
+        $defaultSelection = [];
+        foreach ($variantGroups as $name => $values) {
+            $defaultSelection[$name] = $values[0] ?? null;
+        }
     @endphp
 
     <nav class="mb-6 text-sm text-slate-500">
@@ -104,16 +169,82 @@
 
             @include('shop.partials.delivery-estimate', ['product' => $product])
 
-            <form method="POST" action="{{ route('cart.add') }}" class="mt-8">
-                @csrf
-                <input type="hidden" name="product_id" value="{{ $product->id }}">
-                <div class="flex flex-wrap items-center gap-3">
-                    <input type="number" name="quantity" min="1" max="999" value="1" class="w-24 rounded-xl border border-slate-300 py-3 text-center text-lg font-semibold focus:border-primary focus:outline-none">
-                    <button type="submit" class="flex-1 rounded-xl bg-primary px-8 py-3.5 text-base font-bold text-white shadow-lg shadow-primary/25 hover:opacity-95 disabled:opacity-50 sm:flex-none" @if($stock !== null && $stock <= 0) disabled @endif>
-                        {{ $stock !== null && $stock <= 0 ? 'Нет в наличии' : 'Добавить в корзину' }}
-                    </button>
-                </div>
-            </form>
+            <div class="mt-8" x-data="productVariants(@json($defaultSelection), @json($variantGroups))" x-cloak>
+                @if ($hasVariantPicker)
+                    <div class="mb-6 space-y-4">
+                        @foreach ($variantGroups as $optName => $values)
+                            <div>
+                                <p class="mb-2 text-sm font-semibold text-slate-700">
+                                    {{ $optName }}:
+                                    <span class="font-normal text-slate-500" x-text="selected['{{ $optName }}'] || ''"></span>
+                                </p>
+                                @if ($isColorName($optName))
+                                    <div class="flex flex-wrap gap-2">
+                                        @foreach ($values as $val)
+                                            @php $hex = $resolveColor($val); @endphp
+                                            <button type="button"
+                                                    @click="select('{{ $optName }}', @js($val))"
+                                                    :class="selected['{{ $optName }}'] === @js($val) ? 'ring-2 ring-primary ring-offset-2 border-primary' : 'border-slate-200 hover:border-slate-300'"
+                                                    class="h-9 w-9 rounded-lg border-2 transition"
+                                                    title="{{ $val }}"
+                                                    @if ($hex) style="background: {{ $hex }};" @endif>
+                                                @if (! $hex)
+                                                    <span class="text-[10px] font-bold">{{ mb_substr($val, 0, 2) }}</span>
+                                                @endif
+                                            </button>
+                                        @endforeach
+                                    </div>
+                                @elseif ($isSizeName($optName))
+                                    <div class="flex flex-wrap gap-2">
+                                        @foreach ($values as $val)
+                                            <button type="button"
+                                                    @click="select('{{ $optName }}', @js($val))"
+                                                    :class="selected['{{ $optName }}'] === @js($val) ? 'border-primary bg-primary text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'"
+                                                    class="min-w-[2.5rem] rounded-lg border px-3 py-2 text-sm font-semibold transition">
+                                                {{ $val }}
+                                            </button>
+                                        @endforeach
+                                    </div>
+                                @else
+                                    <div class="flex flex-wrap gap-2">
+                                        @foreach ($values as $val)
+                                            <button type="button"
+                                                    @click="select('{{ $optName }}', @js($val))"
+                                                    :class="selected['{{ $optName }}'] === @js($val) ? 'border-primary bg-primary text-white' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'"
+                                                    class="rounded-lg border px-3 py-2 text-sm font-medium transition">
+                                                {{ $val }}
+                                            </button>
+                                        @endforeach
+                                    </div>
+                                @endif
+                            </div>
+                        @endforeach
+                    </div>
+                @endif
+
+                <form method="POST" action="{{ route('cart.add') }}">
+                    @csrf
+                    <input type="hidden" name="product_id" value="{{ $product->id }}">
+                    <input type="hidden" name="options" :value="JSON.stringify(selected)">
+                    <div class="flex flex-wrap items-center gap-3">
+                        <input type="number" name="quantity" min="1" max="999" value="1" class="w-24 rounded-xl border border-slate-300 py-3 text-center text-lg font-semibold focus:border-primary focus:outline-none">
+                        <button type="submit" class="flex-1 rounded-xl bg-primary px-8 py-3.5 text-base font-bold text-white shadow-lg shadow-primary/25 hover:opacity-95 disabled:opacity-50 sm:flex-none" @if($stock !== null && $stock <= 0) disabled @endif>
+                            {{ $stock !== null && $stock <= 0 ? 'Нет в наличии' : 'Добавить в корзину' }}
+                        </button>
+                    </div>
+                </form>
+            </div>
+            <script>
+                function productVariants(defaults, groups) {
+                    return {
+                        selected: { ...defaults },
+                        groups: groups || {},
+                        select(name, value) {
+                            this.selected[name] = value;
+                        },
+                    };
+                }
+            </script>
         </div>
     </div>
 
