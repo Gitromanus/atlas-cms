@@ -67,30 +67,17 @@ jobs:
           sshpass -p "$SSH_PASSWORD" ssh -p "$SSH_PORT" -o StrictHostKeyChecking=no \
             "$SSH_USERNAME@$SSH_HOST" '
               set +e
-              echo "=== Диск / квота ==="
               df -h ~ 2>/dev/null || df -h
-              du -sh ~/public_html 2>/dev/null || true
-              du -sh ~/public_html/storage 2>/dev/null || true
-              du -sh ~/public_html/storage/app/1c 2>/dev/null || true
-
               rm -f ~/atlas.zip ~/public_html/atlas.zip ~/tmp_atlas.zip 2>/dev/null
-
-              # Логи
               rm -f ~/public_html/storage/logs/*.log 2>/dev/null
-
-              # Кэш обмена 1С (xml/zip/картинки сессий) — основной пожиратель квоты
               if [ -d ~/public_html/storage/app/1c ]; then
                 rm -rf ~/public_html/storage/app/1c/*
                 echo "storage/app/1c очищен"
               fi
-
               rm -rf ~/public_html/storage/framework/views/* 2>/dev/null
               rm -rf ~/public_html/storage/framework/cache/* 2>/dev/null
               rm -rf ~/public_html/bootstrap/cache/*.php 2>/dev/null
-
-              echo "=== После очистки ==="
               df -h ~ 2>/dev/null || df -h
-              du -sh ~/public_html 2>/dev/null || true
             '
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
@@ -115,19 +102,11 @@ jobs:
               set -e
               cd ~ || exit 1
               test -f atlas.zip || { echo "atlas.zip не найден в HOME"; exit 1; }
-
               cd ~/public_html || exit 1
               unzip -o ~/atlas.zip
               rm -f ~/atlas.zip
-
-              mkdir -p bootstrap/cache
-              mkdir -p storage/app/public
-              mkdir -p storage/framework/cache
-              mkdir -p storage/framework/sessions
-              mkdir -p storage/framework/views
-              mkdir -p storage/logs
+              mkdir -p bootstrap/cache storage/app/public storage/framework/cache storage/framework/sessions storage/framework/views storage/logs
               chmod -R ug+rwx storage bootstrap/cache 2>/dev/null || true
-
               echo "Распаковка завершена"
             '
         env:
@@ -157,7 +136,6 @@ jobs:
             "$SSH_USERNAME@$SSH_HOST" '
               set -e
               cd ~/public_html || exit 1
-
               PHP_BIN=""
               for bin in php8.3 php8.2 php8.1 php8.0 php; do
                 if command -v "$bin" >/dev/null 2>&1; then
@@ -165,14 +143,11 @@ jobs:
                   break
                 fi
               done
-
               if [ -z "$PHP_BIN" ]; then
                 echo "Не найден PHP 8.x на сервере" >&2
                 exit 1
               fi
-
               echo "PHP: $PHP_BIN $($PHP_BIN -r "echo PHP_VERSION;")"
-
               "$PHP_BIN" artisan storage:link 2>/dev/null || ln -sfn ../storage/app/public public/storage
               rm -rf storage/framework/views/* || true
               "$PHP_BIN" artisan view:clear 2>/dev/null || true
@@ -180,7 +155,7 @@ jobs:
               "$PHP_BIN" artisan config:clear 2>/dev/null || true
               "$PHP_BIN" artisan route:clear 2>/dev/null || true
               "$PHP_BIN" artisan migrate --force
-
+              "$PHP_BIN" artisan atlas:fix-variant-flags 2>/dev/null || true
               echo "Deploy OK"
             '
         env:
@@ -195,6 +170,3 @@ jobs:
           echo "HTTP ${STATUS} для витрины"
           CAT=$(curl -sS -k -o /dev/null -w "%{http_code}" --max-time 60 -L "${SITE_URL}/public/odeza-i-obuv/catalog" || echo 000)
           echo "HTTP ${CAT} для каталога"
-          if [ "$CAT" = "500" ] || [ "$STATUS" = "500" ]; then
-            echo "::warning::Сайт вернул 500 — смотрите storage/logs/laravel.log на сервере"
-          fi
