@@ -1,0 +1,286 @@
+<?php
+
+namespace App\Models;
+
+use App\Models\Concerns\BelongsToTenant;
+use App\Services\Tenant\TenantContext;
+use App\Support\Slugger;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+
+class Product extends Model
+{
+    use BelongsToTenant;
+
+    protected $fillable = [
+        'tenant_id',
+        'category_id',
+        'sku',
+        'barcode',
+        'name',
+        'description',
+        'slug',
+        'unit',
+        'ext_id',
+        'is_active',
+        'is_new',
+        'is_hit',
+        'is_sale',
+        'meta_title',
+        'meta_description',
+        'is_deleted_from_1c',
+    ];
+
+    protected function casts(): array
+    {
+        return [
+            'is_active' => 'boolean',
+            'is_new' => 'boolean',
+            'is_hit' => 'boolean',
+            'is_sale' => 'boolean',
+            'is_deleted_from_1c' => 'boolean',
+        ];
+    }
+
+    protected static function booted(): void
+    {
+        static::saving(function (self $model) {
+            if (blank($model->slug) && $model->name) {
+                $model->slug = $model->uniqueSlug();
+            }
+
+            $model->search_name = mb_strtolower(trim(($model->name ?? '').' '.($model->sku ?? '')));
+        });
+    }
+
+    public function category(): BelongsTo
+    {
+        return $this->belongsTo(Category::class);
+    }
+
+    public function uniqueSlug(): string
+    {
+        $base = Slugger::slug($this->name) ?: 'tovar';
+        $tenantId = $this->tenant_id ?? app(TenantContext::class)->id();
+
+        $slug = $base;
+        $i = 2;
+
+        while (static::query()
+            ->where('tenant_id', $tenantId)
+            ->where('slug', $slug)
+            ->whereKeyNot($this->getKey())
+            ->exists()) {
+            $slug = $base.'-'.$i++;
+        }
+
+        return $slug;
+    }
+
+    public function features(): HasMany
+    {
+        return $this->hasMany(ProductFeature::class)
+            ->orderBy('sort_order')
+            ->orderBy('id');
+    }
+
+    /**
+     * Эвристика по имени только для UI фильтров (свотчи цвета),
+     * НЕ для решения «это вариант или свойство».
+     * Вариантность — только флаг is_variant из 1С (Характеристики / offers).
+     */
+    public static function isVariantAttributeName(string $name): bool
+    {
+        $n = mb_strtolower(trim($name));
+
+        if ($n === '') {
+            return false;
+        }
+
+        return str_contains($n, 'цвет')
+            || str_contains($n, 'color')
+            || str_contains($n, 'colour')
+            || str_contains($n, 'размер')
+            || str_contains($n, 'size')
+            || $n === 'р-р'
+            || $n === 'rr';
+    }
+
+    public function isVariantFeature(ProductFeature $feature): bool
+    {
+        return (bool) $feature->is_variant;
+    }
+
+    public function variantFeatures(): \Illuminate\Support\Collection
+    {
+        return $this->features
+            ->filter(fn (ProductFeature $f) => $this->isVariantFeature($f))
+            ->values();
+    }
+
+    public function propertyFeatures(): \Illuminate\Support\Collection
+    {
+        return $this->features
+            ->filter(fn (ProductFeature $f) => ! $this->isVariantFeature($f))
+            ->values();
+    }
+
+    public function variants(): HasMany
+    {
+        return $this->hasMany(ProductVariant::class);
+    }
+
+    public function hasVariants(): bool
+    {
+        if ($this->relationLoaded('variants')) {
+            return $this->variants->isNotEmpty();
+        }
+
+        return $this->variants()->exists();
+    }
+
+    /**
+     * Остаток по выбранным опциям варианта (или null, если варианты не используются).
+     *
+     * @param  array<string, string>  $selected
+     */
+    public function quantityForOptions(array $selected): ?float
+    {
+        if (! $this->hasVariants()) {
+            return null;
+        }
+
+        $variants = $this->relationLoaded('variants')
+            ? $this->variants
+            : $this->variants()->get();
+
+        foreach ($variants as $variant) {
+            $options = (array) ($variant->options ?? []);
+            $match = true;
+
+            foreach ($selected as $name => $value) {
+                if (($options[$name] ?? null) !== $value) {
+                    $match = false;
+                    break;
+                }
+            }
+
+            if ($match && count($options) >= count($selected)) {
+                return (float) $variant->quantity;
+            }
+        }
+
+        foreach ($variants as $variant) {
+            $options = (array) ($variant->options ?? []);
+            $allMatch = true;
+
+            foreach ($selected as $name => $value) {
+                if (($options[$name] ?? null) !== $value) {
+                    $allMatch = false;
+                    break;
+                }
+            }
+
+            if ($allMatch) {
+                return (float) $variant->quantity;
+            }
+        }
+
+        return null;
+    }
+
+    public function prices(): HasMany
+    {
+        return $this->hasMany(ProductPrice::class);
+    }
+
+    public function stocks(): HasMany
+    {
+        return $this->hasMany(ProductStock::class);
+    }
+
+    public function images(): HasMany
+    {
+        return $this->hasMany(ProductImage::class)->orderBy('sort_order');
+    }
+
+    public function mainImage(): HasOne
+    {
+        return $this->hasOne(ProductImage::class)->orderBy('sort_order')->orderBy('id');
+    }
+
+    public function stockTotal(): float
+    {
+        return (float) $this->stocks()->sum('quantity');
+    }
+
+    public function getPriceAttribute(): ?float
+    {
+        if ($this->relationLoaded('prices')) {
+            $price = $this->prices->sortBy('price')->first();
+        } else {
+            $price = $this->prices()->orderBy('price')->first();
+        }
+
+        return $price !== null ? (float) $price->price : null;
+    }
+
+    public function isAvailable(): bool
+    {
+        return $this->stocks()->count() === 0 || $this->stockTotal() > 0;
+    }
+
+    public function scopeActive(Builder $query): Builder
+    {
+        return $query->where('is_active', true)
+            ->where('is_deleted_from_1c', false);
+    }
+
+    public function scopeInStock(Builder $query): Builder
+    {
+        return $query->where(function (Builder $q) {
+            $q->whereDoesntHave('stocks')
+                ->orWhereHas('stocks', fn (Builder $sq) => $sq->where('quantity', '>', 0));
+        });
+    }
+
+    public function reviews(): HasMany
+    {
+        return $this->hasMany(ProductReview::class);
+    }
+
+    public function approvedReviews(): HasMany
+    {
+        return $this->hasMany(ProductReview::class)->where('is_approved', true)->latest();
+    }
+
+    public function averageRating(): ?float
+    {
+        $avg = $this->approvedReviews()->avg('rating');
+
+        return $avg !== null ? round((float) $avg, 1) : null;
+    }
+
+    public function reviewsCount(): int
+    {
+        return (int) $this->approvedReviews()->count();
+    }
+
+    public function scopeHits(Builder $query): Builder
+    {
+        return $query->where('is_hit', true);
+    }
+
+    public function scopeNewArrivals(Builder $query): Builder
+    {
+        return $query->where('is_new', true);
+    }
+
+    public function scopeOnSale(Builder $query): Builder
+    {
+        return $query->where('is_sale', true);
+    }
+}
