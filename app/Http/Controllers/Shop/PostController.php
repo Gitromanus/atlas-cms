@@ -46,7 +46,7 @@ class PostController extends Controller
         ]);
     }
 
-    public function show(Request $request, string $shop, string $postSlug): View
+    public function show(Request $request, string $postSlug): View
     {
         $post = Post::query()
             ->where('slug', $postSlug)
