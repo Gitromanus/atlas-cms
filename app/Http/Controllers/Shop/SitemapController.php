@@ -1,24 +1,50 @@
 <?php
+
 namespace App\Http\Controllers\Shop;
-use App\Http\Controllers\Controller; use App\Models\{Category,Page,Post,Product};
-use App\Services\Tenant\TenantContext; use Illuminate\Http\Response;
-class SitemapController extends Controller {
-    public function index(string $shop): Response {
-        $base = rtrim((string)config('app.url'),'/').'/'.$shop;
-        $urls = [['loc'=>$base,'priority'=>'1.0'],['loc'=>$base.'/catalog','priority'=>'0.9']];
-        foreach (Category::query()->get() as $cat) $urls[] = ['loc'=>$base.'/catalog/'.$cat->slug,'priority'=>'0.7'];
-        foreach (Product::query()->active()->get(['slug','updated_at']) as $p)
-            $urls[] = ['loc'=>$base.'/product/'.$p->slug,'priority'=>'0.8','lastmod'=>optional($p->updated_at)?->toAtomString()];
-        foreach (Page::query()->published()->get(['slug','updated_at']) as $page)
-            $urls[] = ['loc'=>$base.'/page/'.$page->slug,'priority'=>'0.5','lastmod'=>optional($page->updated_at)?->toAtomString()];
-        $xml = '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n';
+
+use App\Http\Controllers\Controller;
+use App\Models\Category;
+use App\Models\Page;
+use App\Models\Post;
+use App\Models\Product;
+use Illuminate\Http\Response;
+
+class SitemapController extends Controller
+{
+    public function index(): Response
+    {
+        $urls = [];
+
+        $urls[] = ['loc' => route('home'), 'changefreq' => 'daily', 'priority' => '1.0'];
+        $urls[] = ['loc' => route('catalog.index'), 'changefreq' => 'daily', 'priority' => '0.9'];
+
+        foreach (Category::query()->where('is_active', true)->get() as $c) {
+            $urls[] = ['loc' => route('catalog.category', $c->slug), 'changefreq' => 'weekly', 'priority' => '0.8'];
+        }
+
+        foreach (Product::query()->where('is_active', true)->limit(5000)->get() as $p) {
+            $urls[] = ['loc' => route('product.show', $p->slug), 'changefreq' => 'weekly', 'priority' => '0.7'];
+        }
+
+        foreach (Page::query()->where('is_active', true)->get() as $page) {
+            $urls[] = ['loc' => route('page.show', $page->slug), 'changefreq' => 'monthly', 'priority' => '0.5'];
+        }
+
+        foreach (Post::query()->where('is_published', true)->get() as $post) {
+            $urls[] = ['loc' => route('posts.show', $post->slug), 'changefreq' => 'weekly', 'priority' => '0.6'];
+        }
+
+        $xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+        $xml .= '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n';
         foreach ($urls as $u) {
-            $xml .= '  <url><loc>'.e($u['loc']).'</loc>';
-            if (!empty($u['lastmod'])) $xml .= '<lastmod>'.$u['lastmod'].'</lastmod>';
-            if (!empty($u['priority'])) $xml .= '<priority>'.$u['priority'].'</priority>';
-            $xml .= "</url>\n";
+            $xml .= '  <url>\n';
+            $xml .= '    <loc>'.e($u['loc']).'</loc>\n';
+            $xml .= '    <changefreq>'.$u['changefreq'].'</changefreq>\n';
+            $xml .= '    <priority>'.$u['priority'].'</priority>\n';
+            $xml .= '  </url>\n';
         }
         $xml .= '</urlset>';
-        return response($xml, 200)->header('Content-Type', 'application/xml');
+
+        return response($xml, 200, ['Content-Type' => 'application/xml; charset=UTF-8']);
     }
 }

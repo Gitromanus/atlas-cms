@@ -26,20 +26,11 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         $middleware->redirectGuestsTo(function (\Illuminate\Http\Request $request) {
-            $shop = $request->route('shop');
-            if (! $shop) {
-                $segments = $request->segments();
-                $first = $segments[0] ?? null;
-                $reserved = config('atlas.reserved_paths', []);
-                if (is_string($first) && $first !== '' && ! in_array(strtolower($first), $reserved, true)) {
-                    $shop = $first;
-                }
-            }
-            if ($shop) {
-                return route('customer.login', ['shop' => $shop]);
+            if ($request->is('shop/*') || $request->is('shop')) {
+                return url('/shop/login');
             }
 
-            return url('/shop/login');
+            return route('customer.login');
         });
 
         $middleware->validateCsrfTokens(except: [
