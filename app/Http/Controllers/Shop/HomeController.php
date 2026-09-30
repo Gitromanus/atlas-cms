@@ -7,7 +7,6 @@ use App\Models\Category;
 use App\Models\Post;
 use App\Models\Product;
 use App\Models\ProductReview;
-use App\Services\Demo\DemoCatalogSeeder;
 use App\Services\Tenant\TenantContext;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\View\View;
@@ -17,9 +16,6 @@ class HomeController extends Controller
     public function index(): View
     {
         $tenant = app(TenantContext::class)->current();
-        if ($tenant) {
-            app(DemoCatalogSeeder::class)->ensure($tenant);
-        }
         $enableArticles = (bool) $tenant?->setting('enable_articles', true);
         $enableNews = (bool) $tenant?->setting('enable_news', true);
         $enableReviews = (bool) $tenant?->setting('enable_reviews', true);
@@ -59,9 +55,18 @@ class HomeController extends Controller
                 ->get()
             : collect();
 
-        return view('shop.home', compact(
-            'products', 'hits', 'newArrivals', 'saleProducts', 'categories',
-            'articles', 'news', 'latestReviews', 'enableArticles', 'enableNews', 'enableReviews'
-        ));
+        return view('shop.home', [
+            'products' => $products,
+            'hits' => $hits,
+            'newArrivals' => $newArrivals,
+            'saleProducts' => $saleProducts,
+            'categories' => $categories,
+            'articles' => $articles,
+            'news' => $news,
+            'latestReviews' => $latestReviews,
+            'enableArticles' => $enableArticles,
+            'enableNews' => $enableNews,
+            'enableReviews' => $enableReviews,
+        ]);
     }
 }
