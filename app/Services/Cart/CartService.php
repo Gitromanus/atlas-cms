@@ -5,7 +5,6 @@ namespace App\Services\Cart;
 use App\Models\CartItem;
 use App\Models\Customer;
 use App\Models\Product;
-use App\Services\Tenant\TenantContext;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
@@ -39,19 +38,18 @@ class CartService
      */
     public function add(Product $product, int $quantity = 1, array $options = []): CartItem
     {
-        $optionsJson = $this->normalizeOptions($options);
+        $filtered = array_filter($options, fn ($v) => $v !== null && $v !== '');
+        ksort($filtered);
 
-        $itemQuery = $this->query()->where('product_id', $product->id);
-        if ($optionsJson === null) {
-            $itemQuery->where(function ($q) {
-                $q->whereNull('options')
-                    ->orWhere('options', '[]')
-                    ->orWhere('options', '{}');
+        $item = $this->query()
+            ->where('product_id', $product->id)
+            ->get()
+            ->first(function (CartItem $row) use ($filtered) {
+                $rowOpts = is_array($row->options) ? array_filter($row->options) : [];
+                ksort($rowOpts);
+
+                return $rowOpts == $filtered;
             });
-        } else {
-            $itemQuery->where('options', $optionsJson);
-        }
-        $item = $itemQuery->first();
 
         if ($item !== null) {
             $item->increment('quantity', $quantity);
@@ -61,13 +59,25 @@ class CartService
 
         $customer = Auth::guard('customers')->user();
 
-        return $this->query()->create([
-            'customer_id' => $customer?->id,
-            'session_id' => $customer === null ? $this->sessionKey() : null,
-            'product_id' => $product->id,
-            'options' => $options,
-            'quantity' => max(1, $quantity),
-        ]);
+        try {
+            return $this->query()->create([
+                'customer_id' => $customer?->id,
+                'session_id' => $customer === null ? $this->sessionKey() : null,
+                'product_id' => $product->id,
+                'options' => $filtered === [] ? null : $filtered,
+                'quantity' => max(1, $quantity),
+            ]);
+        } catch (\Throwable $e) {
+            if (str_contains($e->getMessage(), 'options')) {
+                return $this->query()->create([
+                    'customer_id' => $customer?->id,
+                    'session_id' => $customer === null ? $this->sessionKey() : null,
+                    'product_id' => $product->id,
+                    'quantity' => max(1, $quantity),
+                ]);
+            }
+            throw $e;
+        }
     }
 
     protected function normalizeOptions(array $options): ?string
@@ -154,17 +164,22 @@ class CartService
             $existing = CartItem::query()
                 ->where('customer_id', $customer->id)
                 ->where('product_id', $guestItem->product_id)
-                ->where('options', $this->normalizeOptions($guestItem->options ?? []))
-                ->first();
+                ->get()
+                ->first(function (CartItem $row) use ($guestItem) {
+                    $a = is_array($row->options) ? $row->options : [];
+                    $b = is_array($guestItem->options) ? $guestItem->options : [];
+                    ksort($a);
+                    ksort($b);
+
+                    return $a == $b;
+                });
 
             if ($existing !== null) {
                 $existing->increment('quantity', $guestItem->quantity);
+                $guestItem->delete();
             } else {
-                $guestItem->update(['customer_id' => $customer->id]);
-                continue;
+                $guestItem->update(['customer_id' => $customer->id, 'session_id' => null]);
             }
-
-            $guestItem->delete();
         }
     }
 }
