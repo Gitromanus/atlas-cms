@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Services\Cart\CartService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 
 class CartController extends Controller
@@ -24,42 +25,58 @@ class CartController extends Controller
 
     public function add(Request $request): RedirectResponse
     {
-        $validated = $request->validate([
-            'product_id' => ['required', 'exists:products,id'],
-            'quantity' => ['nullable', 'integer', 'min:1', 'max:999'],
-            // options приходит JSON-строкой из Alpine-пикера вариантов (см. product.blade.php)
-            'options' => ['nullable'],
-        ]);
+        try {
+            $validated = $request->validate([
+                'product_id' => ['required', 'integer'],
+                'quantity' => ['nullable', 'integer', 'min:1', 'max:999'],
+                'options' => ['nullable'],
+            ]);
 
-        $product = Product::query()->active()->findOrFail($validated['product_id']);
-        $options = $this->decodeOptions($validated['options'] ?? null);
+            $product = Product::query()->find($validated['product_id']);
+            if ($product === null) {
+                return back()->withErrors(['product_id' => 'Товар не найден']);
+            }
 
-        // Для товара с вариантами комбинация характеристик должна реально существовать в 1С
-        if ($product->hasVariants() && $product->variantQuantity($options) === null) {
-            return back()
-                ->withErrors(['options' => 'Такого варианта товара нет в наличии'])
-                ->withInput();
+            if (! $product->is_active || $product->is_deleted_from_1c) {
+                return back()->withErrors(['product_id' => 'Товар недоступен']);
+            }
+
+            $options = $this->decodeOptions($validated['options'] ?? null);
+
+            try {
+                if ($options !== [] && $product->variants()->exists()) {
+                    $qty = $product->variantQuantity($options);
+                    if ($qty === null) {
+                        Log::info('Cart: variant not exact match', [
+                            'product_id' => $product->id,
+                            'options' => $options,
+                        ]);
+                    }
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Cart variant check: '.$e->getMessage());
+            }
+
+            $this->cart->add($product, (int) ($validated['quantity'] ?? 1), $options);
+
+            return back()->with('status', 'Товар добавлен в корзину');
+        } catch (\Throwable $e) {
+            Log::error('Cart add 500: '.$e->getMessage(), ['trace' => $e->getTraceAsString()]);
+
+            return back()->withErrors(['cart' => 'Не удалось добавить товар: '.$e->getMessage()]);
         }
-
-        $this->cart->add($product, $validated['quantity'] ?? 1, $options);
-
-        return back()->with('status', 'Товар добавлен в корзину');
     }
 
-    /**
-     * Приводит options (массив или JSON-строка из пикера вариантов) к массиву.
-     */
     protected function decodeOptions(mixed $options): array
     {
         if (is_array($options)) {
-            return $options;
+            return array_filter($options, fn ($v) => $v !== null && $v !== '');
         }
 
         if (is_string($options) && $options !== '') {
             $decoded = json_decode($options, true);
-
             if (is_array($decoded)) {
-                return $decoded;
+                return array_filter($decoded, fn ($v) => $v !== null && $v !== '');
             }
         }
 
@@ -82,12 +99,5 @@ class CartController extends Controller
         $this->cart->remove($item);
 
         return back()->with('status', 'Товар удалён из корзины');
-    }
-
-    public function clear(): RedirectResponse
-    {
-        $this->cart->clear();
-
-        return redirect()->route('cart.index');
     }
 }

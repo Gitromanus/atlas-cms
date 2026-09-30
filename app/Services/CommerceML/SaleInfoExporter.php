@@ -6,8 +6,7 @@ use App\Models\DeliveryMethod;
 use App\Models\OrderStatus;
 
 /**
- * Справочники для 1С (кнопки «Загрузить статусы / службы доставки / платёжные системы»).
- * type=sale&mode=info
+ * Справочники для 1С: type=sale&mode=info
  */
 class SaleInfoExporter
 {
@@ -49,46 +48,67 @@ class SaleInfoExporter
             ->get();
 
         $e = static fn (string $s): string => htmlspecialchars($s, ENT_XML1 | ENT_COMPAT, 'UTF-8');
+        $date = now()->format('Y-m-d\TH:i:s');
 
-        $xml = '<?xml version="1.0" encoding="UTF-8"?>'."\n".'<Справочник>'."\n";
-
-        foreach (['Статусы', 'Cтатусы'] as $tag) {
-            $xml .= "  <{$tag}>\n";
-            foreach ($statuses as $s) {
-                $id = $e((string) ($s->ext_code ?: $s->code ?: $s->id));
-                $name = $e((string) $s->name);
-                $xml .= "    <Элемент><Ид>{$id}</Ид><Название>{$name}</Название></Элемент>\n";
-            }
-            $xml .= "  </{$tag}>\n";
+        $statusItems = '';
+        foreach ($statuses as $s) {
+            $id = $e((string) ($s->ext_code ?: $s->code ?: $s->id));
+            $name = $e((string) $s->name);
+            $statusItems .= "      <Элемент><Ид>{$id}</Ид><Название>{$name}</Название><Наименование>{$name}</Наименование></Элемент>\n";
         }
 
-        $xml .= "  <ПлатежныеСистемы>\n";
+        $payItems = '';
         foreach ([
             ['id' => 'cash', 'name' => 'Наличными'],
             ['id' => 'card_online', 'name' => 'Картой онлайн'],
             ['id' => 'card_courier', 'name' => 'Картой курьеру'],
         ] as $ps) {
-            $xml .= '    <Элемент><Ид>'.$e($ps['id']).'</Ид><Название>'.$e($ps['name']).'</Название></Элемент>'."\n";
+            $id = $e($ps['id']);
+            $name = $e($ps['name']);
+            $payItems .= "      <Элемент><Ид>{$id}</Ид><Название>{$name}</Название><Наименование>{$name}</Наименование></Элемент>\n";
         }
-        $xml .= "  </ПлатежныеСистемы>\n";
 
-        $xml .= "  <СлужбыДоставки>\n";
+        $delItems = '';
         if ($deliveries->isEmpty()) {
-            foreach ([
+            $list = [
                 ['id' => 'pickup', 'name' => 'Самовывоз'],
                 ['id' => 'courier', 'name' => 'Курьер'],
                 ['id' => 'yandex', 'name' => 'Яндекс Доставка'],
-            ] as $d) {
-                $xml .= '    <Элемент><Ид>'.$e($d['id']).'</Ид><Название>'.$e($d['name']).'</Название></Элемент>'."\n";
-            }
+            ];
         } else {
-            foreach ($deliveries as $d) {
-                $xml .= '    <Элемент><Ид>'.$e((string) ($d->code ?: $d->id)).'</Ид><Название>'.$e((string) $d->name).'</Название></Элемент>'."\n";
-            }
+            $list = $deliveries->map(fn ($d) => [
+                'id' => (string) ($d->code ?: $d->id),
+                'name' => (string) $d->name,
+            ])->all();
         }
-        $xml .= "  </СлужбыДоставки>\n";
-        $xml .= '</Справочник>';
+        foreach ($list as $d) {
+            $id = $e($d['id']);
+            $name = $e($d['name']);
+            $delItems .= "      <Элемент><Ид>{$id}</Ид><Название>{$name}</Название><Наименование>{$name}</Наименование></Элемент>\n";
+        }
 
-        return $xml;
+        return <<<XML
+<?xml version="1.0" encoding="UTF-8"?>
+<КоммерческаяИнформация ВерсияСхемы="2.08" ДатаФормирования="{$date}">
+  <Справочник>
+    <Статусы>
+{$statusItems}    </Статусы>
+    <Cтатусы>
+{$statusItems}    </Cтатусы>
+    <ПлатежныеСистемы>
+{$payItems}    </ПлатежныеСистемы>
+    <СлужбыДоставки>
+{$delItems}    </СлужбыДоставки>
+    <Доставка>
+{$delItems}    </Доставка>
+  </Справочник>
+  <Статусы>
+{$statusItems}  </Статусы>
+  <ПлатежныеСистемы>
+{$payItems}  </ПлатежныеСистемы>
+  <СлужбыДоставки>
+{$delItems}  </СлужбыДоставки>
+</КоммерческаяИнформация>
+XML;
     }
 }
