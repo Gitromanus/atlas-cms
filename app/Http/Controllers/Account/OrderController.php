@@ -9,14 +9,14 @@ use Illuminate\View\View;
 
 class OrderController extends Controller
 {
-    public function index(): View
+    public function index(Request $request): View
     {
         $customer = auth('customers')->user();
         abort_unless($customer !== null, 403);
 
         $orders = Order::query()
             ->where('customer_id', $customer->id)
-            ->with('status')
+            ->with(['status'])
             ->latest('placed_at')
             ->latest('id')
             ->get();
@@ -24,7 +24,7 @@ class OrderController extends Controller
         return view('shop.account.orders', compact('orders'));
     }
 
-    public function show(Request $request, string $shop, int|string $order): View
+    public function show(Request $request, int|string $order): View
     {
         $customer = auth('customers')->user();
         abort_unless($customer !== null, 403);

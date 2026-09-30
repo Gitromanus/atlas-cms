@@ -11,7 +11,7 @@ use Illuminate\Http\Request;
 
 class ReviewController extends Controller
 {
-    public function store(Request $request, string $shop, string $productSlug): RedirectResponse
+    public function store(Request $request, string $productSlug): RedirectResponse
     {
         $tenant = app(TenantContext::class)->current();
         abort_unless((bool) $tenant?->setting('enable_reviews', true), 404);
@@ -37,6 +37,6 @@ class ReviewController extends Controller
 
         return redirect()
             ->route('product.show', ['productSlug' => $product->slug])
-            ->with('status', 'Спасибо! Отзыв отправлен на модерацию.');
+            ->with('status', 'Отзыв отправлен и появится после модерации.');
     }
 }
