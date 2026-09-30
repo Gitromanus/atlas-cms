@@ -2,9 +2,15 @@
 
 namespace App\Services\CommerceML;
 
+use App\Models\DeliveryMethod;
 use App\Models\Order;
+use App\Models\OrderStatus;
 use Illuminate\Support\Str;
 
+/**
+ * Формирует orders.xml для выгрузки заказов в 1С (type=sale, mode=query).
+ * Также отдаёт справочники статусов/оплаты/доставки — кнопки загрузки в УТ.
+ */
 class OrdersExporter
 {
     public function __construct(protected ExchangeStore $store) {}
@@ -39,7 +45,107 @@ class OrdersExporter
             $root->appendChild($this->document($doc, $order));
         }
 
+        $this->appendDictionaries($doc, $root);
+
         return $doc->saveXML() ?: '<?xml version="1.0" encoding="UTF-8"?><КоммерческаяИнформация/>';
+    }
+
+    protected function appendDictionaries(\DOMDocument $doc, \DOMElement $root): void
+    {
+        $tenantId = $this->store->getTenantId();
+
+        $statuses = OrderStatus::query()
+            ->where('tenant_id', $tenantId)
+            ->orderBy('id')
+            ->get();
+
+        if ($statuses->isEmpty()) {
+            foreach ([
+                ['code' => 'new', 'name' => 'Новый'],
+                ['code' => 'processing', 'name' => 'В обработке'],
+                ['code' => 'shipped', 'name' => 'Отправлен'],
+                ['code' => 'completed', 'name' => 'Выполнен'],
+                ['code' => 'cancelled', 'name' => 'Отменён'],
+            ] as $row) {
+                OrderStatus::query()->firstOrCreate(
+                    ['tenant_id' => $tenantId, 'code' => $row['code']],
+                    ['name' => $row['name'], 'is_system' => true]
+                );
+            }
+            $statuses = OrderStatus::query()
+                ->where('tenant_id', $tenantId)
+                ->orderBy('id')
+                ->get();
+        }
+
+        $deliveries = DeliveryMethod::query()
+            ->where('tenant_id', $tenantId)
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get();
+
+        $addElements = function (\DOMElement $parent, array $items) use ($doc): void {
+            foreach ($items as $item) {
+                $el = $doc->createElement('Элемент');
+                $el->appendChild($this->node($doc, 'Ид', (string) $item['id']));
+                $el->appendChild($this->node($doc, 'Название', (string) $item['name']));
+                $el->appendChild($this->node($doc, 'Наименование', (string) $item['name']));
+                $parent->appendChild($el);
+            }
+        };
+
+        $statusItems = $statuses->map(fn ($s) => [
+            'id' => (string) ($s->ext_code ?: $s->code ?: $s->id),
+            'name' => (string) $s->name,
+        ])->all();
+
+        $payItems = [
+            ['id' => 'cash', 'name' => 'Наличными'],
+            ['id' => 'card_online', 'name' => 'Картой онлайн'],
+            ['id' => 'card_courier', 'name' => 'Картой курьеру'],
+        ];
+
+        if ($deliveries->isEmpty()) {
+            $delItems = [
+                ['id' => 'pickup', 'name' => 'Самовывоз'],
+                ['id' => 'courier', 'name' => 'Курьер'],
+                ['id' => 'yandex', 'name' => 'Яндекс Доставка'],
+            ];
+        } else {
+            $delItems = $deliveries->map(fn ($d) => [
+                'id' => (string) ($d->code ?: $d->id),
+                'name' => (string) $d->name,
+            ])->all();
+        }
+
+        $spr = $doc->createElement('Справочник');
+        foreach (['Статусы', 'Cтатусы'] as $tag) {
+            $node = $doc->createElement($tag);
+            $addElements($node, $statusItems);
+            $spr->appendChild($node);
+        }
+        $ps = $doc->createElement('ПлатежныеСистемы');
+        $addElements($ps, $payItems);
+        $spr->appendChild($ps);
+        $dl = $doc->createElement('СлужбыДоставки');
+        $addElements($dl, $delItems);
+        $spr->appendChild($dl);
+        $dl2 = $doc->createElement('Доставка');
+        $addElements($dl2, $delItems);
+        $spr->appendChild($dl2);
+        $root->appendChild($spr);
+
+        foreach (['Статусы', 'ПлатежныеСистемы', 'СлужбыДоставки'] as $tag) {
+            $node = $doc->createElement($tag);
+            $items = match ($tag) {
+                'Статусы' => $statusItems,
+                'ПлатежныеСистемы' => $payItems,
+                default => $delItems,
+            };
+            $addElements($node, $items);
+            $root->appendChild($node);
+        }
     }
 
     protected function document(\DOMDocument $doc, Order $order): \DOMElement
