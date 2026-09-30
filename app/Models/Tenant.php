@@ -10,11 +10,11 @@ class Tenant extends Model
 {
     protected $fillable = [
         'name',
-        'slug',
         'subdomain',
+        'slug',
+        'logo_path',
         'theme_id',
         'owner_id',
-        'logo_path',
         'is_active',
         'settings',
     ];
@@ -32,27 +32,42 @@ class Tenant extends Model
         return $this->belongsTo(Theme::class);
     }
 
-    public function owner(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'owner_id');
-    }
-
     public function domains(): HasMany
     {
         return $this->hasMany(TenantDomain::class);
     }
 
-    public function setting(string $key, mixed $default = null): mixed
+    public function users(): HasMany
     {
-        $settings = is_array($this->settings) ? $this->settings : [];
-
-        return $settings[$key] ?? $default;
+        return $this->hasMany(User::class);
     }
 
-    /**
-     * Базовый URL витрины (один магазин — корень сайта).
-     * Кастомный домен, если подключён; иначе APP_URL /.
-     */
+    public function products(): HasMany
+    {
+        return $this->hasMany(Product::class);
+    }
+
+    public function orders(): HasMany
+    {
+        return $this->hasMany(Order::class);
+    }
+
+    public function owner(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'owner_id');
+    }
+
+    public function getRevenueAttribute(): float
+    {
+        return (float) $this->orders()->sum('total');
+    }
+
+    public function setting(string $key, mixed $default = null): mixed
+    {
+        return data_get($this->settings, $key, $default);
+    }
+
+    /** Витрина на корне сайта. */
     public function url(): string
     {
         $primary = $this->domains()->where('is_primary', true)->value('domain');
@@ -66,9 +81,6 @@ class Tenant extends Model
         return url('/');
     }
 
-    /**
-     * URL точки обмена с 1С.
-     */
     public function exchangeUrl(): string
     {
         return url('/1c/exchange');
