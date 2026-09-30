@@ -82,16 +82,15 @@ class CheckoutController extends Controller
         }
 
         $order = $this->orders->create($validated);
-        $shop = app(TenantContext::class)->current()?->slug;
 
         if (($validated['payment_method'] ?? '') === 'card_online') {
-            return redirect()->route('payment.pay', ['shop' => $shop, 'order' => $order->id]);
+            return redirect()->route('payment.pay', ['order' => $order->id]);
         }
 
-        return redirect()->route('checkout.success', ['shop' => $shop, 'order' => $order->id]);
+        return redirect()->route('checkout.success', ['order' => $order->id]);
     }
 
-    public function success(Request $request, string $shop, int|string $order): View
+    public function success(Request $request, int|string $order): View
     {
         $model = Order::query()->with(['items', 'status', 'deliveryMethod'])->whereKey($order)->firstOrFail();
 
