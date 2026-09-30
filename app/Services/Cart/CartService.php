@@ -6,41 +6,35 @@ use App\Models\CartItem;
 use App\Models\Customer;
 use App\Models\Product;
 use App\Services\Tenant\TenantContext;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 
-/**
- * Корзина покупателя.
- *
- * Гостевая корзина привязана к session_id; при входе покупателя
- * его корзина объединяется с гостевой.
- */
 class CartService
 {
-    protected function sessionKey(): ?string
+    protected function sessionKey(): string
     {
-        return session()->getId();
-    }
-
-    protected function query(): Builder
-    {
-        $query = CartItem::query();
-
-        $customer = Auth::guard('customers')->user();
-
-        if ($customer !== null) {
-            return $query->where('customer_id', $customer->id);
+        if (! session()->has('guest_cart_session')) {
+            session()->put('guest_cart_session', (string) Str::uuid());
         }
 
-        return $query->whereNull('customer_id')->where('session_id', $this->sessionKey());
+        return (string) session('guest_cart_session');
+    }
+
+    protected function query()
+    {
+        $customer = Auth::guard('customers')->user();
+
+        $q = CartItem::query();
+
+        if ($customer !== null) {
+            return $q->where('customer_id', $customer->id);
+        }
+
+        return $q->whereNull('customer_id')->where('session_id', $this->sessionKey());
     }
 
     /**
-     * Добавление товара в корзину с учётом выбранных вариантов
-     * (например, ["Цвет" => "Красный", "Размер" => "M"]).
-     *
      * @param  array<string, string>  $options
      */
     public function add(Product $product, int $quantity = 1, array $options = []): CartItem
@@ -76,9 +70,6 @@ class CartService
         ]);
     }
 
-    /**
-     * Нормализация вариантов: пустой выбор хранится как NULL.
-     */
     protected function normalizeOptions(array $options): ?string
     {
         $filtered = array_filter($options, fn ($v) => $v !== null && $v !== '');
@@ -107,7 +98,7 @@ class CartService
     public function items(): Collection
     {
         return $this->query()
-            ->with(['product.mainImage', 'product.category'])
+            ->with(['product.mainImage', 'product.category', 'product.prices', 'product.variants'])
             ->get();
     }
 
@@ -118,12 +109,38 @@ class CartService
 
     public function total(): float
     {
-        return (float) $this->items()->sum(fn (CartItem $item) => (float) ($item->product->price ?? 0) * $item->quantity);
+        return (float) $this->items()->sum(function (CartItem $item) {
+            return $this->unitPrice($item) * $item->quantity;
+        });
     }
 
-    /**
-     * Объединение гостевой корзины с корзиной авторизованного покупателя.
-     */
+    public function unitPrice(CartItem $item): float
+    {
+        $product = $item->product;
+        $options = is_array($item->options) ? $item->options : [];
+
+        if ($product && $options !== [] && $product->variants) {
+            foreach ($product->variants as $variant) {
+                $vo = $variant->options ?? [];
+                if (! is_array($vo) || $vo === []) {
+                    continue;
+                }
+                $match = true;
+                foreach ($vo as $k => $v) {
+                    if ((string) ($options[$k] ?? '') !== (string) $v) {
+                        $match = false;
+                        break;
+                    }
+                }
+                if ($match && $variant->price !== null) {
+                    return (float) $variant->price;
+                }
+            }
+        }
+
+        return (float) ($product->price ?? 0);
+    }
+
     public function mergeGuestCart(Customer $customer): void
     {
         $guestKey = session()->get('guest_cart_session', $this->sessionKey());
