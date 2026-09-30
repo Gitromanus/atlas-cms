@@ -5,13 +5,12 @@ namespace App\Http\Controllers\OneC;
 use App\Http\Controllers\Controller;
 use App\Jobs\ImportCatalogJob;
 use App\Jobs\ImportOffersJob;
-use App\Models\DeliveryMethod;
 use App\Models\ExchangeLog;
-use App\Models\OrderStatus;
 use App\Models\Tenant;
 use App\Services\CommerceML\ExchangeStore;
 use App\Services\CommerceML\OrderStatusImporter;
 use App\Services\CommerceML\OrdersExporter;
+use App\Services\CommerceML\SaleInfoExporter;
 use App\Services\Tenant\TenantContext;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -228,43 +227,60 @@ class ExchangeController extends Controller
         return response('success');
     }
 
-    /**
-     * type=sale&mode=info — справочники для кнопок 1С «Загрузить статусы / службы доставки».
-     */
     protected function saleInfo(ExchangeStore $store): Response
     {
-        $tenantId = $store->getTenantId();
+        $xml = (new SaleInfoExporter($store))->export();
+        $this->log($store, 'sale', 'info', null, 'success', 'Справочники статусов/оплаты/доставки отданы в 1С');
 
-        $statuses = OrderStatus::query()
-            ->where('tenant_id', $tenantId)
-            ->orderBy('id')
-            ->get();
+        return response($xml, 200, [
+            'Content-Type' => 'application/xml; charset=UTF-8',
+            'Cache-Control' => 'no-store',
+        ]);
+    }
 
-        if ($statuses->isEmpty()) {
-            $defaults = [
-                ['code' => 'new', 'name' => 'Новый'],
-                ['code' => 'processing', 'name' => 'В обработке'],
-                ['code' => 'shipped', 'name' => 'Отправлен'],
-                ['code' => 'completed', 'name' => 'Выполнен'],
-                ['code' => 'cancelled', 'name' => 'Отменён'],
-            ];
-            foreach ($defaults as $row) {
-                OrderStatus::query()->firstOrCreate(
-                    ['tenant_id' => $tenantId, 'code' => $row['code']],
-                    ['name' => $row['name'], 'is_system' => true]
-                );
-            }
-            $statuses = OrderStatus::query()
-                ->where('tenant_id', $tenantId)
-                ->orderBy('id')
-                ->get();
+    protected function queryOrders(ExchangeStore $store): Response
+    {
+        $xml = (new OrdersExporter($store))->export();
+
+        return response($xml, 200, [
+            'Content-Type' => 'application/xml; charset=UTF-8',
+        ]);
+    }
+
+    protected function saleSuccess(ExchangeStore $store): Response
+    {
+        $ids = $store->get('pending_order_ids', []);
+
+        if (! empty($ids)) {
+            \App\Models\Order::query()
+                ->whereIn('id', $ids)
+                ->update(['exported_to_1c' => true]);
         }
 
-        $deliveries = DeliveryMethod::query()
-            ->where('tenant_id', $tenantId)
-            ->where('is_active', true)
-            ->orderBy('sort_order')
-            ->orderBy('name')
-            ->get();
+        $store->set('pending_order_ids', []);
+        $this->log($store, 'sale', 'success', null, 'success', 'Заказы переданы в 1С');
 
-        $xml = '<?xml version="1.0" encoding="UTF-8"?>'.
+        return response('success');
+    }
+
+    protected function saleFailure(Tenant $tenant, string $type): Response
+    {
+        $this->log($tenant, $type, 'failure', null, 'failure', 'Ошибка на стороне 1С');
+
+        return response('success');
+    }
+
+    protected function log(ExchangeStore|Tenant $context, string $type, string $mode, ?string $filename, string $status, string $message): void
+    {
+        $tenantId = $context instanceof ExchangeStore ? $context->getTenantId() : $context->id;
+
+        ExchangeLog::query()->create([
+            'tenant_id' => $tenantId,
+            'type' => $type,
+            'mode' => $mode,
+            'filename' => $filename !== null ? mb_substr((string) $filename, 0, 240) : null,
+            'status' => $status,
+            'message' => $message,
+        ]);
+    }
+}
