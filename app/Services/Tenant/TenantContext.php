@@ -42,7 +42,7 @@ class TenantContext
     }
 
     /**
-     * Единственный активный магазин.
+     * Единственный активный магазин. Остальные is_active=false.
      */
     public function resolveSingle(): ?Tenant
     {
@@ -58,6 +58,13 @@ class TenantContext
 
         if ($tenant === null) {
             $tenant = Tenant::query()->orderBy('id')->with('theme')->first();
+        }
+
+        if ($tenant !== null) {
+            Tenant::query()
+                ->where('id', '!=', $tenant->id)
+                ->where('is_active', true)
+                ->update(['is_active' => false]);
         }
 
         $this->tenant = $tenant;
