@@ -88,10 +88,12 @@ class ShopSettings extends Page implements HasForms
                             ->maxSize(2048)
                             ->nullable(),
                         TextInput::make('slug')
-                            ->label('Адрес витрины (slug)')
+                            ->label('Внутренний код магазина')
                             ->required()
                             ->alphaDash()
-                            ->helperText(fn () => 'Витрина: '.$this->storefrontUrlPreview()),
+                            ->disabled()
+                            ->dehydrated()
+                            ->helperText(fn () => 'Витрина: '.$this->storefrontUrlPreview().' — без префикса в URL'),
                         Select::make('theme_id')->label('Тема витрины')
                             ->options(Theme::query()->pluck('name', 'id')),
                         Toggle::make('is_active')->label('Магазин активен'),
@@ -212,9 +214,7 @@ class ShopSettings extends Page implements HasForms
 
     protected function storefrontUrlPreview(): string
     {
-        $slug = $this->data['slug'] ?? $this->tenant()->slug;
-
-        return rtrim((string) config('app.url'), '/').'/'.$slug;
+        return rtrim((string) config('app.url'), '/') ?: url('/');
     }
 
     protected function customDomainStatus(): string
@@ -237,15 +237,10 @@ class ShopSettings extends Page implements HasForms
         $data = $this->form->getState();
         $tenant = $this->tenant();
         $reserved = config('atlas.reserved_paths', []);
-        $slug = strtolower(trim((string) ($data['slug'] ?? '')));
+        $slug = strtolower(trim((string) ($data['slug'] ?? $tenant->slug ?? '')));
 
-        if (in_array($slug, $reserved, true)) {
+        if ($slug !== '' && in_array($slug, $reserved, true)) {
             Notification::make()->title('Slug «'.$slug.'» зарезервирован')->danger()->send();
-
-            return;
-        }
-        if (Tenant::query()->where('slug', $slug)->where('id', '!=', $tenant->id)->exists()) {
-            Notification::make()->title('Адрес «'.$slug.'» уже занят')->danger()->send();
 
             return;
         }
@@ -281,15 +276,18 @@ class ShopSettings extends Page implements HasForms
             $logo = $logo[0] ?? null;
         }
 
-        $tenant->forceFill([
+        $fill = [
             'name' => $data['name'],
-            'slug' => $slug,
-            'subdomain' => $slug,
             'theme_id' => $data['theme_id'] ?: null,
             'is_active' => (bool) ($data['is_active'] ?? false),
             'logo_path' => $logo ?: $tenant->logo_path,
             'settings' => $settings,
-        ])->save();
+        ];
+        if ($slug !== '') {
+            $fill['slug'] = $slug;
+            $fill['subdomain'] = $slug;
+        }
+        $tenant->forceFill($fill)->save();
 
         $this->syncCustomDomain($tenant, (string) ($data['custom_domain'] ?? ''));
         app(TenantContext::class)->set($tenant->fresh());
