@@ -3,18 +3,21 @@
 namespace App\Http\Controllers\Platform;
 
 use App\Http\Controllers\Controller;
-use Illuminate\View\View;
+use App\Services\Tenant\TenantContext;
+use Illuminate\Http\RedirectResponse;
 
-/**
- * Главная страница платформы (лендинг SaaS).
- *
- * Витрина магазина открывается по path /{slug}/ — отдельный маршрут home.
- * Поддомены на бесплатном shared-хостинге не используются.
- */
 class LandingController extends Controller
 {
-    public function index(): View
+    public function index(): RedirectResponse
     {
-        return view('platform.landing');
+        $tenant = app(TenantContext::class)->resolveSingle();
+
+        if ($tenant === null) {
+            return redirect('/shop');
+        }
+
+        $slug = $tenant->slug ?: $tenant->subdomain ?: 'shop';
+
+        return redirect('/'.$slug);
     }
 }

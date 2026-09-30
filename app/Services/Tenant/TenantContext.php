@@ -5,10 +5,7 @@ namespace App\Services\Tenant;
 use App\Models\Tenant;
 
 /**
- * Контекст текущего магазина (тенанта).
- *
- * Устанавливается middleware ResolveTenant в начале каждого запроса
- * и используется глобальными скоупами для изоляции данных.
+ * Контекст текущего магазина (режим одного магазина).
  */
 class TenantContext
 {
@@ -34,19 +31,37 @@ class TenantContext
         return $this->tenant !== null;
     }
 
-    /**
-     * Значение настройки магазина (из tenants.settings).
-     */
     public function setting(string $key, mixed $default = null): mixed
     {
         return $this->tenant?->setting($key, $default) ?? $default;
     }
 
-    /**
-     * Слаг активной темы витрины.
-     */
     public function themeSlug(): string
     {
-        return $this->tenant?->theme?->slug ?? config('atlas.themes.default');
+        return $this->tenant?->theme?->slug ?? config('atlas.themes.default', 'default');
+    }
+
+    /**
+     * Единственный активный магазин.
+     */
+    public function resolveSingle(): ?Tenant
+    {
+        if ($this->tenant !== null) {
+            return $this->tenant;
+        }
+
+        $tenant = Tenant::query()
+            ->where('is_active', true)
+            ->orderBy('id')
+            ->with('theme')
+            ->first();
+
+        if ($tenant === null) {
+            $tenant = Tenant::query()->orderBy('id')->with('theme')->first();
+        }
+
+        $this->tenant = $tenant;
+
+        return $tenant;
     }
 }

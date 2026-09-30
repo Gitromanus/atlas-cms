@@ -9,10 +9,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Изоляция данных мультиарендного приложения.
- *
- * Модель автоматически ограничивается текущим магазином (глобальный скоуп)
- * и получает tenant_id при создании записи.
+ * Привязка записи к магазину.
+ * Без контекста данные НЕ отдаются (исправление утечки между магазинами).
  */
 trait BelongsToTenant
 {
@@ -26,6 +24,8 @@ trait BelongsToTenant
                     $builder->getModel()->getTable().'.tenant_id',
                     $tenantId
                 );
+            } else {
+                $builder->whereRaw('1 = 0');
             }
         });
 
