@@ -9,7 +9,7 @@ use Illuminate\View\View;
 
 class ProductController extends Controller
 {
-    public function show(Request $request, string $shop, string $productSlug): View
+    public function show(Request $request, string $productSlug): View
     {
         $product = Product::query()
             ->where('slug', $productSlug)
