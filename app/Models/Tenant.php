@@ -10,10 +10,11 @@ class Tenant extends Model
 {
     protected $fillable = [
         'name',
-        'subdomain',
         'slug',
-        'logo_path',
+        'subdomain',
         'theme_id',
+        'owner_id',
+        'logo_path',
         'is_active',
         'settings',
     ];
@@ -31,59 +32,26 @@ class Tenant extends Model
         return $this->belongsTo(Theme::class);
     }
 
+    public function owner(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'owner_id');
+    }
+
     public function domains(): HasMany
     {
         return $this->hasMany(TenantDomain::class);
     }
 
-    public function users(): HasMany
-    {
-        return $this->hasMany(User::class);
-    }
-
-    public function products(): HasMany
-    {
-        return $this->hasMany(Product::class);
-    }
-
-    public function orders(): HasMany
-    {
-        return $this->hasMany(Order::class);
-    }
-
-    /**
-     * Владелец магазина (предприниматель) — пользователь панели /shop.
-     */
-    public function owner()
-    {
-        return $this->hasOne(User::class, 'tenant_id')
-            ->where('is_super_admin', false)
-            ->latest('id');
-    }
-
-    /**
-     * Общая выручка магазина (сумма заказов).
-     */
-    public function getRevenueAttribute(): float
-    {
-        return (float) $this->orders()->sum('total');
-    }
-
-    /**
-     * Значение настройки магазина из JSON-поля settings.
-     */
     public function setting(string $key, mixed $default = null): mixed
     {
-        return data_get($this->settings, $key, $default);
+        $settings = is_array($this->settings) ? $this->settings : [];
+
+        return $settings[$key] ?? $default;
     }
 
     /**
-     * Базовый URL витрины магазина.
-     *
-     * Приоритет:
-     *  1. Свой (кастомный) домен, если подключён;
-     *  2. Path на текущем хосте: /{slug} (shared-хостинг без wildcard DNS);
-     *  3. Поддомен (если ATLAS_TENANT_ROUTING=subdomain).
+     * Базовый URL витрины (один магазин — корень сайта).
+     * Кастомный домен, если подключён; иначе APP_URL /.
      */
     public function url(): string
     {
@@ -95,30 +63,14 @@ class Tenant extends Model
                 : 'https://'.$primary;
         }
 
-        $slug = $this->slug ?: $this->subdomain;
-
-        if ($slug === null || $slug === '') {
-            return url('/');
-        }
-
-        $routing = config('atlas.tenant_routing', 'path');
-
-        if ($routing === 'subdomain' && $this->subdomain) {
-            $rootDomain = config('atlas.root_domain');
-
-            return 'https://'.$this->subdomain.'.'.$rootDomain;
-        }
-
-        // Path-режим: абсолютный URL на текущий хост + /{slug}
-        // url() учитывает запрос/APP_URL корректнее, чем ручная склейка config('app.url')
-        return url('/'.$slug);
+        return url('/');
     }
 
     /**
-     * URL точки обмена с 1С для этого магазина.
+     * URL точки обмена с 1С.
      */
     public function exchangeUrl(): string
     {
-        return rtrim($this->url(), '/').'/1c/exchange';
+        return url('/1c/exchange');
     }
 }
