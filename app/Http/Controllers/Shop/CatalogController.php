@@ -22,7 +22,7 @@ class CatalogController extends Controller
         return $this->render($request, null);
     }
 
-    public function category(Request $request, string $shop, string $categorySlug): View
+    public function category(Request $request, string $categorySlug): View
     {
         $category = Category::query()->where('slug', $categorySlug)->firstOrFail();
 
